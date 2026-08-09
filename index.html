@@ -20,6 +20,16 @@
   --el3:0 11px 15px -7px rgba(60,64,67,.2),0 24px 38px 3px rgba(60,64,67,.14);
 }
 body{font-family:'Noto Sans Thai','Roboto','Google Sans',Arial,'Segoe UI',sans-serif;background:var(--navy);color:var(--tx);min-height:100vh;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* LOGIN — หน้าเข้าใช้งาน ครอบทั้งจอจนกว่าจะล็อกอิน */
+.login-ov{position:fixed;inset:0;background:var(--navy);z-index:400;display:none;align-items:center;justify-content:center;padding:24px;overflow-y:auto}
+.login-card{background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--el2);padding:32px;width:100%;max-width:400px}
+.login-brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+.login-t{font-size:20px;font-weight:500;line-height:1.2}
+.login-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.login-card .fgrp{margin-bottom:14px}
+.login-btn{width:100%;justify-content:center;margin-top:4px}
+.login-hint{font-size:12px;color:var(--muted);margin-top:18px;padding-top:14px;border-top:1px solid var(--line);line-height:1.6}
+.login-wait{font-size:13px;color:var(--muted);text-align:center;padding:18px 0}
 /* HEADER — top app bar */
 .hdr{background:var(--card);border-bottom:1px solid var(--bd);padding:0 24px;display:flex;align-items:center;gap:14px;height:64px;position:sticky;top:0;z-index:100}
 .logo{width:36px;height:36px;background:var(--or);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
@@ -621,11 +631,25 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 </head>
 <body>
 
+<!-- ======= หน้าเข้าใช้งาน (Login) ======= -->
+<div class="login-ov" id="loginView">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
+      <div>
+        <div class="login-t">Formula Studio</div>
+        <div class="login-sub">Beyond Laboratory — R&D Briefing Tool</div>
+      </div>
+    </div>
+    <div id="loginBody"></div>
+  </div>
+</div>
+
 <div class="hdr">
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.3</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.4</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -2982,6 +3006,96 @@ function renderSalesOwnerField(keep){
   if(hint) hint.textContent = locked ? '(ตาม User ที่เข้าใช้งาน)' : '';
 }
 
+// ---------- หน้าเข้าใช้งาน (Login) ----------
+// แสดงคลุมทั้งจอเมื่อยังไม่ได้เข้าใช้งาน · ออกจากระบบแล้วจะกลับมาที่หน้านี้
+let _lgMode = null;   // 'login' | 'first' | 'wait' — จำไว้เพื่อไม่ให้วาดทับตอนผู้ใช้กำลังพิมพ์
+function loginFormHTML(){
+  return `
+    <div class="fgrp">
+      <label class="flbl">ชื่อผู้ใช้ / User ID</label>
+      <input class="fi" id="lgUser" autocomplete="username" placeholder="ชื่อผู้ใช้ หรือ อีเมลบริษัท" onkeydown="if(event.key==='Enter'){var p=document.getElementById('lgPass'); if(p) p.focus();}">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">รหัสผ่าน</label>
+      <input class="fi" id="lgPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="lgErr" class="pw-err"></div>
+    <button class="btn btn-p login-btn" onclick="doLogin()">เข้าใช้งาน</button>
+    <div class="login-hint">ลืมรหัสผ่าน — ติดต่อผู้ดูแลระบบ (Role Admin) เพื่อรีเซ็ตรหัสให้ใหม่</div>`;
+}
+function firstAdminHTML(){
+  return `
+    <div class="modal-desc" style="margin-bottom:16px">ยังไม่มีผู้ใช้ในระบบ — สร้างผู้ใช้คนแรก ซึ่งจะได้สิทธิ์ Admin</div>
+    <div class="fgrp">
+      <label class="flbl">ชื่อผู้ใช้</label>
+      <input class="fi" id="lgNewName" placeholder="เช่น Ham">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">User ID / อีเมล</label>
+      <input class="fi" id="lgNewMail" placeholder="name@beyondlabth.co.th">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">รหัสผ่าน</label>
+      <input class="fi" id="lgNewPass" type="password" placeholder="เว้นว่างไว้จะใช้ ${DEFAULT_PW}" onkeydown="if(event.key==='Enter')createFirstAdmin()">
+    </div>
+    <div id="lgErr" class="pw-err"></div>
+    <button class="btn btn-p login-btn" onclick="createFirstAdmin()">สร้างผู้ใช้ Admin คนแรก</button>`;
+}
+function renderLoginView(){
+  const ov = document.getElementById('loginView');
+  if(!ov) return;
+  if(currentUser){ ov.style.display = 'none'; _lgMode = null; return; }
+  ov.style.display = 'flex';
+  // ระหว่างรอข้อมูลผู้ใช้จากเซิร์ฟเวอร์ อย่าเพิ่งชวนสร้าง Admin คนแรก
+  const waiting = (typeof sbOn === 'function' && sbOn() && typeof sbReady !== 'undefined' && !sbReady);
+  const mode = userList.length ? 'login' : (waiting ? 'wait' : 'first');
+  if(mode === _lgMode) return;
+  _lgMode = mode;
+  document.getElementById('loginBody').innerHTML =
+    mode === 'login' ? loginFormHTML() :
+    mode === 'first' ? firstAdminHTML() :
+    '<div class="login-wait">กำลังเชื่อมต่อเซิร์ฟเวอร์…</div>';
+  setTimeout(function(){
+    const el = document.getElementById(mode === 'first' ? 'lgNewName' : 'lgUser');
+    if(el) el.focus();
+  }, 60);
+}
+function loginErr(msg){
+  const el = document.getElementById('lgErr');
+  if(el) el.textContent = msg || '';
+}
+function doLogin(){
+  const uEl = document.getElementById('lgUser'), pEl = document.getElementById('lgPass');
+  if(!uEl || !pEl) return;
+  const q = uEl.value.trim().toLowerCase();
+  if(!q){ loginErr('กรอกชื่อผู้ใช้ก่อน'); uEl.focus(); return; }
+  const u = userList.find(x=>String(x.name||'').toLowerCase() === q)
+         || userList.find(x=>String(x.email||'').toLowerCase() === q);
+  if(!u){ loginErr('ไม่พบผู้ใช้นี้ในระบบ'); return; }
+  // บัญชีเก่าที่ยังไม่เคยตั้งรหัส ให้ใช้รหัสตั้งต้นแล้วบันทึกไว้ถาวร
+  const want = u.pass || pwHash(DEFAULT_PW);
+  if(pwHash(pEl.value) !== want){ loginErr('รหัสผ่านไม่ถูกต้อง'); pEl.value=''; pEl.focus(); return; }
+  if(!u.pass) u.pass = want;
+  loginErr('');
+  currentUser = u.name;
+  impersonator = '';
+  logAct('auth','เข้าใช้งาน', u.name + ' · Role ' + roleLabel(u.role));
+  afterUserChange();
+  switchView('dash');
+}
+function createFirstAdmin(){
+  const name = (document.getElementById('lgNewName').value||'').trim();
+  const email = (document.getElementById('lgNewMail').value||'').trim();
+  const pw = document.getElementById('lgNewPass').value || DEFAULT_PW;
+  if(!name){ loginErr('กรอกชื่อผู้ใช้ก่อน'); return; }
+  if(userList.length){ loginErr('มีผู้ใช้ในระบบแล้ว — กรุณาเข้าใช้งานตามปกติ'); renderLoginView(); return; }
+  userList.push({name:name, role:'admin', email:email, pass:pwHash(pw)});
+  currentUser = name;
+  logAct('user','สร้างผู้ใช้ Admin คนแรก', name + (email ? ' · ' + email : ''));
+  loginErr('');
+  afterUserChange();
+  switchView('dash');
+}
 function renderUserUI(){
   const nameEl = document.getElementById('sideUserName');
   const chip = document.getElementById('sideUserChip');
@@ -3007,6 +3121,7 @@ function renderUserUI(){
   const canData = !currentUser || can('createData');
   if(dataBtn) dataBtn.style.display = canData ? 'flex' : 'none';
   if(!canData && document.getElementById('inputView').classList.contains('on')) switchView('dash');
+  renderLoginView();
   const outBtn = document.getElementById('sideLogout');
   if(outBtn) outBtn.style.display = currentUser ? 'flex' : 'none';
   if(currentUser){
