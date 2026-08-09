@@ -104,6 +104,10 @@ body{font-family:'Noto Sans Thai','Roboto','Google Sans',Arial,'Segoe UI',sans-s
 .user-chip{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:7px 14px;font-size:13px;font-weight:500;font-family:inherit;color:var(--tx);cursor:pointer;transition:.15s}
 .user-chip:hover{background:var(--card2)}
 .user-chip.on{background:var(--tint);color:var(--ontint);border-color:transparent}
+/* ออกจากระบบ — เมนูล่างสุดของแถบด้านซ้าย */
+.side-logout{color:var(--re)}
+.side-logout:hover{background:#FCE8E6}
+.side-logout .side-ic{fill:var(--re)}
 /* หน้าสวมบทบาทผู้ใช้ — จัดกลุ่มตาม Role + เลื่อนดูได้ */
 .imp-wrap{flex:1;min-height:0;max-height:calc(100vh - 330px);overflow-y:auto;margin-top:10px;padding-right:6px;scrollbar-width:thin}
 .imp-wrap::-webkit-scrollbar{width:8px}
@@ -621,7 +625,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.2</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.3</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -653,6 +657,8 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
       <svg class="side-ic" viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.9 3.9.1.1L9 12H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3Zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12Z"/></svg>Activities log</button>
     <button class="side-item side-user-btn" id="sideManageUser" onclick="openUserModal()">
       <svg class="side-ic" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5Zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5Z"/></svg>จัดการผู้ใช้</button>
+    <button class="side-item side-logout" id="sideLogout" style="display:none" onclick="sideLogout()">
+      <svg class="side-ic" viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.59L17 17l5-5-5-5ZM4 5h8V3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8v-2H4V5Z"/></svg>ออกจากระบบ</button>
   </div>
 </aside>
 
@@ -662,7 +668,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
     <div class="modal-hd">
       <div>
         <div class="modal-t">จัดการผู้ใช้</div>
-        <div class="modal-desc">เข้าใช้งานด้วยชื่อผู้ใช้ของคุณ — ไม่ต้องใช้รหัสผ่าน</div>
+        <div class="modal-desc">คลิกชื่อของคุณเพื่อเข้าใช้งาน · ผู้ใช้ที่สร้างใหม่จะได้รหัสผ่านตั้งต้น 123456</div>
       </div>
       <button class="modal-x" onclick="closeUserModal()" title="ปิด">×</button>
     </div>
@@ -3001,6 +3007,8 @@ function renderUserUI(){
   const canData = !currentUser || can('createData');
   if(dataBtn) dataBtn.style.display = canData ? 'flex' : 'none';
   if(!canData && document.getElementById('inputView').classList.contains('on')) switchView('dash');
+  const outBtn = document.getElementById('sideLogout');
+  if(outBtn) outBtn.style.display = currentUser ? 'flex' : 'none';
   if(currentUser){
     nameEl.textContent = currentUser;
     chip.classList.add('on');
@@ -3082,7 +3090,8 @@ function createUser(){
   const first = !userList.length;
   const sel = document.getElementById('newUserRole');
   const role = first ? 'admin' : ((sel && ROLES[sel.value]) ? sel.value : 'sales');
-  userList.push({name, role, email});
+  // ตั้งรหัสผ่านเริ่มต้นให้เสมอ กันคนอื่นคลิกชื่อแล้วเข้าใช้งานแทนได้
+  userList.push({name, role, email, pass: pwHash(DEFAULT_PW)});
   currentUser = name;
   logAct('user','สร้างผู้ใช้ใหม่', name+' · Role '+roleLabel(role)+(email?' · '+email:''));
   if(mailEl) mailEl.value='';
@@ -3300,7 +3309,24 @@ function deleteUserAt(i){
   if(currentUser===name) currentUser='';
   afterUserChange(); renderUserList();
 }
+// ออกจากระบบจากเมนูด้านซ้าย — ถามยืนยันก่อน กันกดพลาด
+function sideLogout(){
+  if(!currentUser){ alert('ยังไม่ได้เข้าใช้งาน'); return; }
+  const lines = [
+    'ผู้ใช้ปัจจุบัน: ' + currentUser + ' (' + (roleLabel(currentRole()) || 'ไม่ระบุ Role') + ')',
+    impersonator
+      ? ('กำลังสวมบทบาทอยู่ โดย ' + impersonator + ' — ระบบจะออกจากการสวมบทบาทให้ด้วย')
+      : 'ข้อมูลทั้งหมดที่บันทึกไว้แล้วยังอยู่ครบ',
+    'ต้องเข้าใช้งานใหม่ก่อน จึงจะสร้างงาน คุยในแชท หรืออนุมัติได้'
+  ];
+  askConfirm('ออกจากระบบ', lines, 'ออกจากระบบ', function(){ logoutUser(); switchView('dash'); });
+}
 function logoutUser(){
+  // ออกจากระบบระหว่างสวมบทบาท ต้องล้างสถานะสวมบทบาทด้วย ไม่งั้นค้างเป็นสถานะกำกวม
+  if(impersonator){
+    logAct('auth','ออกจากการสวมบทบาท', currentUser + ' → ' + impersonator);
+    impersonator = '';
+  }
   logAct('auth','ออกจากระบบ', currentUser);
   currentUser='';
   afterUserChange(); renderUserList();
