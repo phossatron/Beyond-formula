@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.6</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.7</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3042,7 +3042,18 @@ function firstAdminHTML(){
     <div id="lgErr" class="pw-err"></div>
     <button class="btn btn-p login-btn" onclick="createFirstAdmin()">สร้างผู้ใช้ Admin คนแรก</button>`;
 }
+// ผู้ใช้ที่จำไว้ในเครื่องนี้ ต้องยังมีอยู่ในระบบจริง
+// (ถูกลบ/เปลี่ยนชื่อจากเครื่องอื่น → เด้งกลับหน้า Login แทนที่จะค้างเป็นผู้ใช้ที่ไม่มีตัวตน)
+function verifySession(){
+  if(!currentUser || !userList.length) return;
+  if(findUser(currentUser)) return;
+  const gone = currentUser;
+  currentUser = ''; impersonator = '';
+  try{ localStorage.setItem('fs_user', ''); localStorage.setItem('fs_imp', ''); }catch(e){}
+  console.warn('[auth] ผู้ใช้ ' + gone + ' ไม่มีอยู่ในระบบแล้ว — กลับไปหน้าเข้าใช้งาน');
+}
 function renderLoginView(){
+  verifySession();
   const ov = document.getElementById('loginView');
   if(!ov) return;
   if(currentUser){ ov.style.display = 'none'; _lgMode = null; return; }
