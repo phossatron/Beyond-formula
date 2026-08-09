@@ -1,0 +1,2137 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beyond Lab — Formula Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --or:#FF6B00;--or2:#FF8C33;--navy:#0D1117;--card:#161B22;--card2:#1C2333;
+  --bd:#30363D;--tx:#E6EDF3;--muted:#8B949E;--ye:#D29922;--gr:#3FB950;
+  --re:#F85149;--bl:#388BFD;--pu:#8957E5;
+}
+body{font-family:'Sarabun','Segoe UI',sans-serif;background:var(--navy);color:var(--tx);min-height:100vh;font-size:15px}
+/* HEADER */
+.hdr{background:var(--card);border-bottom:1px solid var(--bd);padding:0 24px;display:flex;align-items:center;gap:12px;height:56px;position:sticky;top:0;z-index:100}
+.logo{width:34px;height:34px;background:var(--or);border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#fff;flex-shrink:0}
+.hdr-title{font-size:15px;font-weight:700}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.nav{display:flex;gap:4px;margin-left:auto}
+.ntab{padding:7px 18px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-family:inherit;font-weight:600;transition:.2s}
+.ntab.on{background:var(--or);color:#fff}
+.ntab:hover:not(.on){background:var(--card2);color:var(--tx)}
+/* LAYOUT */
+.main{max-width:1100px;margin:0 auto;padding:24px}
+.view{display:none}.view.on{display:block}
+/* CARD */
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px 24px;margin-bottom:16px}
+.ctitle{font-size:13px;font-weight:700;color:var(--or);margin-bottom:16px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.5px}
+/* DROP ZONE */
+.dz{border:2px dashed var(--bd);border-radius:12px;padding:28px;text-align:center;cursor:pointer;transition:.2s;background:var(--card2);margin-bottom:16px}
+.dz:hover,.dz.over{border-color:var(--or);background:rgba(255,107,0,.05)}
+.dz-icon{font-size:36px;margin-bottom:8px}
+.dz-txt{color:var(--muted);font-size:13px}.dz-txt b{color:var(--or)}
+.dz-hint{font-size:11px;color:var(--muted);margin-top:6px}
+/* FORM */
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.full{grid-column:1/-1}
+.fgrp{display:flex;flex-direction:column;gap:5px}
+.flbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.flbl em{color:var(--muted);font-style:normal;font-weight:400;font-size:10px;text-transform:none;margin-left:4px}
+input.fi,select.fi,textarea.fi{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:9px 13px;color:var(--tx);font-size:14px;font-family:inherit;transition:.2s;width:100%}
+input.fi:focus,select.fi:focus,textarea.fi:focus{outline:none;border-color:var(--or);background:#1e2736}
+textarea.fi{resize:vertical;min-height:76px}
+select.fi option{background:var(--card2)}
+/* TAGS */
+.tc{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:7px 11px;display:flex;flex-wrap:wrap;gap:5px;min-height:42px;cursor:text;transition:.2s}
+.tc:focus-within{border-color:var(--or)}
+.tag{background:rgba(255,107,0,.15);border:1px solid rgba(255,107,0,.3);color:var(--or);border-radius:4px;padding:2px 8px;font-size:12px;display:flex;align-items:center;gap:4px}
+.tag-x{background:none;border:none;color:var(--or);cursor:pointer;font-size:15px;padding:0;line-height:1}
+.ti{border:none;background:transparent;color:var(--tx);font-size:14px;font-family:inherit;outline:none;flex:1;min-width:100px}
+/* TOGGLE */
+.tg{display:flex;gap:7px;flex-wrap:wrap}
+.tgb{padding:6px 14px;border-radius:20px;border:1px solid var(--bd);background:transparent;color:var(--muted);font-size:13px;font-family:inherit;cursor:pointer;transition:.2s}
+.tgb.on{background:rgba(255,107,0,.15);border-color:var(--or);color:var(--or)}
+.tgb:hover:not(.on){border-color:var(--muted);color:var(--tx)}
+/* SECTION HEADER */
+.sh{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.snum{width:26px;height:26px;background:var(--or);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.stitle{font-size:14px;font-weight:700}.ssub{font-size:11px;color:var(--muted)}
+/* INGREDIENT TABLE */
+.itwrap{overflow-x:auto;border-radius:8px;border:1px solid var(--bd)}
+.it{width:100%;border-collapse:collapse;font-size:13px}
+.it th{background:var(--card2);padding:9px 11px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;border-bottom:1px solid var(--bd)}
+.it td{padding:6px 8px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:middle}
+.it tr:last-child td{border-bottom:none}
+.it input{background:transparent;border:1px solid transparent;border-radius:5px;padding:5px 8px;color:var(--tx);font-size:13px;font-family:inherit;width:100%;transition:.2s}
+.it input:focus{outline:none;border-color:var(--or);background:var(--card2)}
+.it .calc{color:var(--ye);font-weight:700;font-family:monospace;padding-left:12px}
+.it .tr-tot td{background:rgba(255,107,0,.07);border-top:2px solid var(--or);font-weight:700;color:var(--or)}
+.btn-del{background:none;border:none;color:var(--re);cursor:pointer;font-size:17px;padding:4px 6px;border-radius:4px;transition:.2s}
+.btn-del:hover{background:rgba(248,81,73,.15)}
+.hero-star{cursor:pointer;font-size:16px;opacity:.4;transition:.2s}
+.hero-star.on{opacity:1}
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 20px;border-radius:8px;border:none;font-size:14px;font-family:inherit;font-weight:600;cursor:pointer;transition:.2s}
+.btn-p{background:var(--or);color:#fff}.btn-p:hover{background:var(--or2)}
+.btn-s{background:var(--card2);color:var(--tx);border:1px solid var(--bd)}.btn-s:hover{border-color:var(--or);color:var(--or)}
+.btn-g{background:transparent;color:var(--muted);border:1px solid var(--bd)}.btn-g:hover{color:var(--tx);border-color:var(--muted)}
+.btn-sm{padding:5px 13px;font-size:12px}
+.abar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
+/* DIVIDER */
+.div{height:1px;background:var(--bd);margin:18px 0}
+/* ALERT */
+.alert{padding:11px 15px;border-radius:8px;font-size:13px;margin-bottom:14px;display:flex;align-items:center;gap:9px}
+.alert-i{background:rgba(56,139,253,.1);border:1px solid rgba(56,139,253,.2);color:var(--bl)}
+.alert-s{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.2);color:var(--gr)}
+/* ===== DASHBOARD ===== */
+.db-hdr{background:linear-gradient(135deg,#FF6B00,#8B2500);border-radius:12px;padding:24px;margin-bottom:16px;position:relative;overflow:hidden}
+.db-hdr::after{content:'Rx';position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:90px;font-weight:900;color:rgba(255,255,255,.08);pointer-events:none}
+.db-title{font-size:22px;font-weight:700;margin-bottom:3px}
+.db-sub{font-size:13px;color:rgba(255,255,255,.75)}
+.db-meta{display:flex;gap:20px;margin-top:14px;flex-wrap:wrap}
+.db-meta span{font-size:12px;color:rgba(255,255,255,.65)}.db-meta span b{color:#fff}
+.dbg{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.dbc{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px 20px}
+.dbc-t{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.dbc-t::before{content:'';width:3px;height:14px;background:var(--or);border-radius:2px}
+/* FORMULA TABLE */
+.ft{width:100%;border-collapse:collapse;font-size:13px}
+.ft th{background:rgba(255,107,0,.1);color:var(--or);padding:10px 13px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,107,0,.2)}
+.ft td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:middle}
+.ft tr:last-child td{border-bottom:none}
+.ft .tot td{background:rgba(255,107,0,.08);font-weight:700;color:var(--or);border-top:2px solid rgba(255,107,0,.3)}
+.ft .actual{color:var(--ye);font-weight:700;font-family:monospace}
+.ft .hero-row td{background:rgba(255,107,0,.04)}
+.hero-badge{background:rgba(255,107,0,.15);color:var(--or);border:1px solid rgba(255,107,0,.3);border-radius:4px;padding:1px 7px;font-size:10px;margin-left:6px;font-weight:700}
+/* BENEFIT ITEMS */
+.blist{display:flex;flex-direction:column;gap:7px}
+.bitem{display:flex;align-items:flex-start;gap:9px;padding:9px 13px;background:var(--card2);border-radius:8px;border-left:3px solid var(--gr);font-size:13px}
+/* CONCEPT BOX */
+.cbox{background:linear-gradient(135deg,rgba(255,107,0,.1),rgba(137,87,229,.1));border:1px solid rgba(255,107,0,.2);border-radius:10px;padding:16px 20px;margin-bottom:12px}
+.c-main{font-size:19px;font-weight:700;color:var(--or)}
+.c-desc{font-size:13px;color:var(--muted);margin-top:4px}
+/* SELLING POINTS */
+.spg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sp{background:var(--card2);border-radius:8px;padding:9px 13px;display:flex;align-items:center;gap:9px;border-left:3px solid var(--or);font-size:13px}
+/* CHIPS */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:rgba(255,107,0,.1);border:1px solid rgba(255,107,0,.25);border-radius:8px;padding:8px 13px}
+.chip-n{font-size:13px;font-weight:700}.chip-v{font-size:11px;color:var(--or);font-family:monospace}
+/* TARGET */
+.tgt-g{display:flex;flex-wrap:wrap;gap:9px}
+.tgt-c{background:var(--card2);border-radius:8px;padding:11px 15px;flex:1;min-width:140px}
+.tgt-lbl{font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+.tgt-val{font-size:14px;font-weight:600}
+/* PRINT BAR */
+.pbar{display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px}
+/* EMPTY */
+.empty{text-align:center;padding:60px 24px;color:var(--muted)}
+.empty-ic{font-size:52px;margin-bottom:14px}
+.empty-t{font-size:18px;font-weight:600;color:var(--tx);margin-bottom:8px}
+.empty-d{font-size:14px;max-width:380px;margin:0 auto}
+/* SCROLLBAR */
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--navy)}
+::-webkit-scrollbar-thumb{background:var(--bd);border-radius:3px}
+/* CONSTRAINT */
+.con-tags{display:flex;flex-wrap:wrap;gap:7px}
+.con-tag{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.2);color:var(--re);border-radius:6px;padding:4px 11px;font-size:12px}
+/* FDA STATUS */
+.fda-ok{color:#3FB950;font-size:15px;cursor:default}
+.fda-warn{color:#D29922;font-size:15px;cursor:default}
+.fda-danger{color:#F85149;font-size:15px;cursor:default}
+.fda-unknown{color:#8B949E;font-size:15px;cursor:default}
+.fda-cell{position:relative;text-align:center;white-space:nowrap}
+.fda-tip{display:none;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 6px);background:#0D1117;border:1px solid #30363D;border-radius:8px;padding:8px 12px;font-size:11px;color:#E6EDF3;white-space:nowrap;z-index:200;min-width:220px;max-width:300px;white-space:normal;line-height:1.5;pointer-events:none}
+.fda-cell:hover .fda-tip{display:block}
+/* FDA PANEL */
+.fda-panel{border-radius:12px;padding:18px 20px;margin-bottom:14px;border:1px solid}
+.fda-panel-ok{background:rgba(63,185,80,.07);border-color:rgba(63,185,80,.3)}
+.fda-panel-warn{background:rgba(210,153,34,.07);border-color:rgba(210,153,34,.3)}
+.fda-panel-danger{background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.35)}
+.fda-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid rgba(48,54,61,.5);font-size:13px}
+.fda-row:last-child{border-bottom:none}
+.fda-row-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.fda-row-body{flex:1}
+.fda-row-name{font-weight:700;color:#E6EDF3}
+.fda-row-detail{color:#8B949E;font-size:11px;margin-top:2px}
+.fda-row-limit{font-size:11px;font-family:monospace;margin-top:3px}
+/* SIGNATURE SECTION */
+.sign-wrap{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:4px}
+.sign-col{display:flex;flex-direction:column;gap:8px}
+.sign-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.sign-name{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:9px 13px;color:var(--tx);font-size:14px;font-family:inherit;width:100%}
+.sign-name:focus{outline:none;border-color:var(--or)}
+.sign-box{border:1px solid var(--bd);border-radius:8px;height:90px;background:var(--card2);display:flex;align-items:center;justify-content:center}
+.sign-box-txt{color:var(--muted);font-size:11px}
+.sign-date{font-size:11px;color:var(--muted);text-align:center;border-top:1px solid var(--bd);padding-top:6px;margin-top:4px}
+/* PRINT */
+@media print{
+  .hdr,.pbar,#inputView,button{display:none!important}
+  #dashView{display:block!important}
+  body{background:#fff!important;color:#000!important;font-size:10pt}
+  /* Compact spacing to fit 2 pages */
+  .main{padding:8px!important;max-width:100%!important}
+  .dbc,.card{padding:8px 12px!important;margin-bottom:6px!important}
+  .dbg{gap:6px!important;margin-bottom:6px!important}
+  .db-hdr{padding:12px 16px!important;margin-bottom:8px!important}
+  .cbox{padding:8px 12px!important;margin-bottom:6px!important}
+  .bitem{padding:5px 8px!important}
+  .blist{gap:3px!important}
+  .sp{padding:5px 8px!important}
+  .fda-panel{padding:8px 12px!important;margin-bottom:6px!important}
+  .fda-row{padding:4px 0!important}
+  .tgt-c{padding:7px 10px!important}
+  /* Colors — dark cards keep background, text goes white/light */
+  .dbc,.card,.db-hdr,.fda-panel{border:1px solid #ccc!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .db-hdr{background:linear-gradient(135deg,#FF6B00,#8B2500)!important}
+  .db-title,.db-sub,.db-meta span,.db-meta b{color:#fff!important}
+  .dbc-t{color:#FF6B00!important}
+  /* Formula table — white/light text on dark background */
+  .ft td{color:#E8E8E8!important}
+  .ft td b{color:#fff!important}
+  .ft th{color:#FFB366!important}
+  .ft .actual{color:#FFD966!important}
+  .ft .tot td{color:#FFB366!important}
+  .hero-badge{color:#FFB366!important;border-color:#FFB366!important;background:transparent!important}
+  /* Dark card content — light text */
+  .bitem{color:#E8E8E8!important}
+  .bitem span:last-child{color:#E8E8E8!important}
+  .sp{color:#E8E8E8!important}
+  .tgt-val{color:#fff!important}
+  .tgt-lbl{color:#aaa!important}
+  .chip-n{color:#fff!important}
+  .chip-v{color:#FFD966!important}
+  .fda-row-name{color:#fff!important}
+  .fda-row-detail{color:#ccc!important}
+  .fda-row-limit{color:#FFB366!important}
+  .con-tag{color:#FF8080!important}
+  /* FDA panels with light background — dark text */
+  .fda-panel-ok{background:#f0fff0!important}
+  .fda-panel-ok .fda-row-name{color:#1a4d1a!important}
+  .fda-panel-ok .fda-row-detail{color:#2d6e2d!important}
+  .fda-panel-warn{background:#fffbe6!important}
+  .fda-panel-warn .fda-row-name{color:#5c4a00!important}
+  .fda-panel-warn .fda-row-detail{color:#7a6200!important}
+  .fda-panel-warn .fda-row-limit{color:#cc8800!important}
+  .fda-panel-danger{background:#fff0f0!important}
+  .fda-panel-danger .fda-row-name{color:#7a0000!important}
+  .fda-panel-danger .fda-row-detail{color:#aa1111!important}
+  /* Signature */
+  .sign-name{border:none!important;border-bottom:1.5px solid #555!important;background:transparent!important;color:#000!important;border-radius:0!important;padding:3px 0!important;font-size:13px!important}
+  .sign-box{border:1.5px solid #555!important;background:#fff!important;height:65px!important}
+  .sign-box-txt{color:#aaa!important;font-size:10px!important}
+  .sign-date{color:#333!important;border-top:1px solid #aaa!important;font-size:10px!important}
+  .sign-label{color:#555!important;font-size:9px!important}
+  .sign-wrap{gap:14px!important}
+  #d_approval_wrap{page-break-inside:avoid;margin-bottom:4px!important}
+  #dashContent>div:last-child{page-break-before:avoid}
+}
+@media(max-width:700px){.fg,.fg3,.dbg,.spg,.sign-wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">B</div>
+  <div>
+    <div class="hdr-title">Formula Studio</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool</div>
+  </div>
+  <div class="nav">
+    <button class="ntab on" onclick="switchView('input')">📋 กรอกข้อมูล</button>
+    <button class="ntab" onclick="switchView('dash')">📊 Dashboard</button>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- ======= INPUT VIEW ======= -->
+<div id="inputView" class="view on">
+
+  <!-- FILE UPLOAD -->
+  <div class="card">
+    <div class="ctitle">📁 อัพโหลดไฟล์ Customer Brief <span style="color:var(--muted);font-size:11px;font-weight:400;text-transform:none">(ไม่บังคับ)</span></div>
+    <div class="dz" id="dropzone" onclick="document.getElementById('fileInput').click()"
+         ondragover="ev.preventDefault();this.classList.add('over')"
+         ondragleave="this.classList.remove('over')"
+         ondrop="handleDrop(event)">
+      <div class="dz-icon">📂</div>
+      <div class="dz-txt"><b>คลิกหรือลากไฟล์มาวางที่นี่</b></div>
+      <div class="dz-hint">รองรับ CSV (.csv) — <span id="dlTpl" style="color:var(--or);cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();downloadTemplate()">ดาวน์โหลด Template CSV</span></div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv" style="display:none" onchange="handleFile(this.files[0])">
+    <div id="fileAlert" style="display:none" class="alert alert-s">✅ โหลดไฟล์สำเร็จ — ข้อมูลถูกกรอกอัตโนมัติแล้ว</div>
+  </div>
+
+  <!-- SECTION 1: Customer Info -->
+  <div class="card">
+    <div class="sh"><div class="snum">1</div><div><div class="stitle">ข้อมูลลูกค้าและแบรนด์</div></div></div>
+    <div class="fg">
+      <div class="fgrp">
+        <label class="flbl">ชื่อลูกค้า / Company</label>
+        <input class="fi" id="f_customer" placeholder="เช่น บริษัท ABC จำกัด">
+      </div>
+      <div class="fgrp">
+        <label class="flbl">ชื่อแบรนด์ / Brand Name</label>
+        <input class="fi" id="f_brand" placeholder="เช่น GLOWVIT">
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: Product Concept & Form -->
+  <div class="card">
+    <div class="sh"><div class="snum">2</div><div><div class="stitle">คอนเซปและรูปแบบสินค้า</div></div></div>
+    <div class="fg" style="margin-bottom:14px">
+      <div class="fgrp">
+        <label class="flbl">คอนเซปสินค้า</label>
+        <div class="tg" id="conceptGroup">
+          <button class="tgb" onclick="toggleConcept(this,'ผิวขาว / Whitening')">ผิวขาว</button>
+          <button class="tgb" onclick="toggleConcept(this,'ลดสิว / Anti-Acne')">ลดสิว</button>
+          <button class="tgb" onclick="toggleConcept(this,'Detox / ล้างพิษ')">Detox</button>
+          <button class="tgb" onclick="toggleConcept(this,'เสริมภูมิคุ้มกัน / Immune Boost')">เสริมภูมิ</button>
+          <button class="tgb" onclick="toggleConcept(this,'ชะลอวัย / Anti-Aging')">ชะลอวัย</button>
+          <button class="tgb" onclick="toggleConcept(this,'ลดน้ำหนัก / Weight Management')">ลดน้ำหนัก</button>
+          <button class="tgb" onclick="toggleConcept(this,'บำรุงผม/เล็บ / Hair & Nail')">ผม &amp; เล็บ</button>
+          <button class="tgb" onclick="toggleConcept(this,'ลดอักเสบ / Anti-Inflammation')">ลดอักเสบ</button>
+        </div>
+      </div>
+      <div class="fgrp">
+        <label class="flbl">คอนเซปเพิ่มเติม <em>(กรอกเองได้)</em></label>
+        <input class="fi" id="f_concept_custom" placeholder="เช่น Beauty Sleep, Glow from Within">
+      </div>
+    </div>
+    <div class="fg3">
+      <div class="fgrp">
+        <label class="flbl">รูปแบบสินค้า</label>
+        <select class="fi" id="f_form">
+          <option value="">-- เลือก --</option>
+          <option>แคปซูล</option>
+          <option>เม็ดตอก</option>
+          <option>ผงชงดื่ม</option>
+          <option>ผงกรอกปาก</option>
+          <option>เจลลี่ สตริป</option>
+          <option>เจลลี่ ดริ้ง</option>
+          <option>กัมมี่</option>
+          <option>ช็อตดริ้ง</option>
+          <option>ดรอปดริ้ง</option>
+          <option>โอเวอร์แคป เม็ดตอก</option>
+          <option>โอเวอร์แคป ลิควิด</option>
+        </select>
+      </div>
+      <div class="fgrp">
+        <label class="flbl">ขนาดบรรจุ</label>
+        <input class="fi" id="f_size" placeholder="เช่น 30 เม็ด, 60 แคปซูล">
+      </div>
+      <div class="fgrp">
+        <label class="flbl">น้ำหนักต่อหน่วย (mg)</label>
+        <input class="fi" id="f_unit_weight" type="number" placeholder="เช่น 500, 1000">
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3-4: Ingredients -->
+  <div class="card">
+    <div class="sh"><div class="snum">3</div><div><div class="stitle">สารสกัดและปริมาณที่ต้องการ</div><div class="ssub">ถ้าไม่ระบุ ทีม R&D จะเสนอให้</div></div></div>
+
+    <div style="margin-bottom:14px">
+      <label class="flbl">สารสกัด / Ingredients ที่ลูกค้า Request</label>
+      <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-s btn-sm" onclick="loadTemplate('whitening')">🌟 Auto-fill: ผิวขาว</button>
+        <button class="btn btn-s btn-sm" onclick="loadTemplate('acne')">🧴 Auto-fill: ลดสิว</button>
+        <button class="btn btn-s btn-sm" onclick="loadTemplate('detox')">🌿 Auto-fill: Detox</button>
+        <button class="btn btn-s btn-sm" onclick="loadTemplate('immune')">💊 Auto-fill: เสริมภูมิ</button>
+        <button class="btn btn-s btn-sm" onclick="loadTemplate('antiaging')">⏳ Auto-fill: ชะลอวัย</button>
+      </div>
+    </div>
+
+    <div class="itwrap">
+      <table class="it" id="ingTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>⭐</th>
+            <th style="min-width:200px">ชื่อสาร / Ingredient</th>
+            <th style="min-width:130px">ปริมาณที่ชั่ง (mg)</th>
+            <th style="min-width:160px">แหล่งกำเนิด / Origin</th>
+            <th style="min-width:110px">ความเข้มข้น (%)</th>
+            <th style="min-width:130px">สารที่ได้จริง (mg)</th>
+            <th style="min-width:60px;text-align:center">อย.</th>
+            <th style="min-width:140px">หมายเหตุ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="ingBody"></tbody>
+        <tfoot>
+          <tr class="tr-tot" id="totRow">
+            <td colspan="3" style="font-size:12px;color:var(--or)">รวมทั้งหมด</td>
+            <td id="totWeight" class="calc">0.00 mg</td>
+            <td colspan="2"></td>
+            <td id="totActual" class="calc">0.00 mg</td>
+            <td colspan="3"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="abar" style="margin-top:12px">
+      <button class="btn btn-s btn-sm" onclick="addRow()">＋ เพิ่มสาร</button>
+      <span style="font-size:11px;color:var(--muted)">⭐ = Hero / Key Ingredient | คลิกดาวเพื่อเลือก</span>
+      <span style="font-size:11px;color:var(--muted)">|&nbsp; 🟢 อนุมัติ &nbsp;🟡 เกินขีดจำกัด &nbsp;🔴 ไม่อนุมัติ/ต้องขึ้นทะเบียนยา &nbsp;⚪ ไม่พบในฐานข้อมูล</span>
+    </div>
+  </div>
+
+  <!-- SECTION 5-6: Claims & Constraints -->
+  <div class="card">
+    <div class="sh"><div class="snum">4</div><div><div class="stitle">สรรพคุณ / ข้อจำกัด / กลุ่มเป้าหมาย</div><div class="ssub">ถ้าไม่ระบุ ทีม R&D จะเสนอให้</div></div></div>
+
+    <div class="fg" style="margin-bottom:14px">
+      <div class="fgrp">
+        <label class="flbl">สรรพคุณที่ลูกค้า Request <em>(ไม่บังคับ)</em></label>
+        <div class="tc" id="tc_claims" onclick="document.getElementById('ti_claims').focus()">
+          <input class="ti" id="ti_claims" placeholder="พิมพ์แล้วกด Enter..." onkeydown="addTag(event,'tc_claims','ti_claims')">
+        </div>
+      </div>
+      <div class="fgrp">
+        <label class="flbl">ข้อจำกัด / Constraints <em>(ไม่บังคับ)</em></label>
+        <div class="tc" id="tc_cons" onclick="document.getElementById('ti_cons').focus()">
+          <input class="ti" id="ti_cons" placeholder="เช่น ไม่มีน้ำตาล, ไม่มีกลูเตน, ราคาถูก..." onkeydown="addTag(event,'tc_cons','ti_cons')">
+        </div>
+      </div>
+    </div>
+
+    <div class="fg3">
+      <div class="fgrp">
+        <label class="flbl">กลุ่มเป้าหมาย <em>(ไม่บังคับ)</em></label>
+        <input class="fi" id="f_target" placeholder="เช่น ผู้หญิง 25-40 ปี">
+      </div>
+      <div class="fgrp">
+        <label class="flbl">เพศ</label>
+        <select class="fi" id="f_gender">
+          <option value="">-- ทุกเพศ --</option>
+          <option>หญิง</option><option>ชาย</option><option>ทุกเพศ</option>
+        </select>
+      </div>
+      <div class="fgrp">
+        <label class="flbl">ราคาเป้าหมาย/หน่วย (บาท) <em>(ไม่บังคับ)</em></label>
+        <input class="fi" id="f_price" type="number" placeholder="เช่น 15, 25">
+      </div>
+    </div>
+
+    <div class="div"></div>
+
+    <div class="fgrp full">
+      <label class="flbl">หมายเหตุ / Notes เพิ่มเติม</label>
+      <textarea class="fi" id="f_notes" placeholder="รายละเอียดพิเศษจากลูกค้า..."></textarea>
+    </div>
+  </div>
+
+  <div class="abar">
+    <button class="btn btn-p" onclick="generateDash()">✨ สร้าง Dashboard</button>
+    <button class="btn btn-g" onclick="resetForm()">🗑 ล้างข้อมูล</button>
+    <span id="gen_err" style="color:var(--re);font-size:12px"></span>
+  </div>
+</div>
+
+<!-- ======= DASHBOARD VIEW ======= -->
+<div id="dashView" class="view">
+  <div id="dashEmpty" class="empty">
+    <div class="empty-ic">🧪</div>
+    <div class="empty-t">ยังไม่มีข้อมูล Formula</div>
+    <div class="empty-d">กรอกข้อมูลในแท็บ "กรอกข้อมูล" แล้วกดปุ่ม "สร้าง Dashboard"</div>
+    <br><button class="btn btn-p" onclick="switchView('input')">← กลับไปกรอกข้อมูล</button>
+  </div>
+  <div id="dashContent" style="display:none">
+    <div class="pbar">
+      <button class="btn btn-g btn-sm" onclick="switchView('input')">← แก้ไข</button>
+      <button class="btn btn-s btn-sm" onclick="exportCSV()">📥 Export CSV</button>
+      <button class="btn btn-p btn-sm" onclick="window.print()">🖨 Print / PDF</button>
+    </div>
+
+    <!-- Header -->
+    <div class="db-hdr">
+      <div class="db-title" id="d_title">—</div>
+      <div class="db-sub" id="d_sub">—</div>
+      <div class="db-meta" id="d_meta"></div>
+    </div>
+
+    <!-- Concept -->
+    <div class="cbox" id="d_concept_box">
+      <div class="c-main" id="d_concept_main">—</div>
+      <div class="c-desc" id="d_concept_desc">—</div>
+    </div>
+
+    <!-- Formula Table (full width) -->
+    <div class="dbc" style="margin-bottom:14px">
+      <div class="dbc-t">📋 ตารางสูตร Formula</div>
+      <div style="overflow-x:auto">
+        <table class="ft" id="d_formula_table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ชื่อสาร / Ingredient</th>
+              <th>ปริมาณที่ชั่ง (mg)</th>
+              <th>แหล่งกำเนิด / Origin</th>
+              <th>ความเข้มข้น (%)</th>
+              <th>สารที่ได้จริง (mg)</th>
+              <th style="text-align:center">อย. Status</th>
+              <th>หมายเหตุ</th>
+            </tr>
+          </thead>
+          <tbody id="d_formula_body"></tbody>
+          <tfoot>
+            <tr class="tot">
+              <td colspan="2" style="color:var(--or);font-size:12px">รวม Total</td>
+              <td id="d_tot_w" class="actual"></td>
+              <td colspan="2"></td>
+              <td id="d_tot_a" class="actual"></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- FDA COMPLIANCE PANEL -->
+    <div id="d_fda_panel" style="margin-bottom:14px"></div>
+
+    <!-- 2-col grid -->
+    <div class="dbg">
+      <div class="dbc">
+        <div class="dbc-t">✅ สรรพคุณ / Benefits</div>
+        <div class="blist" id="d_benefits"></div>
+      </div>
+      <div class="dbc">
+        <div class="dbc-t">⭐ Hero / Key Ingredients</div>
+        <div class="chips" id="d_heroes"></div>
+      </div>
+    </div>
+
+    <div class="dbg">
+      <div class="dbc">
+        <div class="dbc-t">🎯 จุดเด่น / Selling Points</div>
+        <div class="spg" id="d_selling"></div>
+      </div>
+      <div class="dbc">
+        <div class="dbc-t">👥 กลุ่มเป้าหมาย / Target Group</div>
+        <div class="tgt-g" id="d_target"></div>
+        <div style="margin-top:12px" id="d_cons_wrap">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:7px;text-transform:uppercase;letter-spacing:.5px">ข้อจำกัด / Constraints</div>
+          <div class="con-tags" id="d_cons"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dbc" style="margin-bottom:14px" id="d_notes_wrap">
+      <div class="dbc-t">📝 หมายเหตุ</div>
+      <div id="d_notes" style="font-size:13px;color:var(--muted)"></div>
+    </div>
+
+    <!-- APPROVAL / SIGNATURE SECTION -->
+    <div class="dbc" style="margin-bottom:14px" id="d_approval_wrap">
+      <div class="dbc-t">✍️ ลงนามอนุมัติ / Approval Signatures</div>
+      <div class="sign-wrap">
+        <div class="sign-col">
+          <div class="sign-label">ผู้เสนอ / Prepared by</div>
+          <input class="sign-name" id="sign_proposer" placeholder="ชื่อ-นามสกุล / Name">
+          <div class="sign-box"><span class="sign-box-txt">ลายมือชื่อ / Signature</span></div>
+          <div class="sign-date">วันที่ / Date: ___________________</div>
+        </div>
+        <div class="sign-col">
+          <div class="sign-label">ผู้อนุมัติ / Approved by</div>
+          <input class="sign-name" id="sign_approver" placeholder="ชื่อ-นามสกุล / Name">
+          <div class="sign-box"><span class="sign-box-txt">ลายมือชื่อ / Signature</span></div>
+          <div class="sign-date">วันที่ / Date: ___________________</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:11px;color:var(--muted);text-align:center;padding:12px">
+      Generated by Beyond Laboratory Formula Studio · <span id="d_date"></span>
+      &nbsp;|&nbsp; <b style="color:var(--or)">CONFIDENTIAL</b>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ========== THAI FDA DATABASE ==========
+// อ้างอิง: ประกาศกระทรวงสาธารณสุข ฉบับที่ 448 พ.ศ. 2566 (มีผล 4 ม.ค. 2567)
+//          ประกาศ อย. รายการพืชอนุญาต 444 ชนิด (8 ก.ค. 2567)
+//          Novel Food List อย. ไทย (2565)
+// status: "approved" | "restricted" | "not_approved"
+// maxActualMg: ปริมาณสูงสุดต่อวัน (mg) ที่อนุมัติ; 99999 = ไม่กำหนดขีดจำกัดเฉพาะ
+const THAI_FDA_DB = [
+
+  // ══════════════════════════════════════════
+  // VITAMINS — ประกาศ ฉบับที่ 448 (มีผล 4 ม.ค. 2567)
+  // ══════════════════════════════════════════
+
+  // ─── VITAMIN C ───
+  { keywords:["ascorbic acid","ascorbate","vitamin c","วิตามินซี","sodium ascorbate","calcium ascorbate"],
+    name:"Vitamin C (วิตามินซี)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 (2566) มีผล 4 ม.ค. 2567 — สูงสุด 1,000 mg/วัน",
+    overNote:"เกิน 1,000 mg/วัน → ต้องขึ้นทะเบียนเป็น ยา (Drug) ไม่สามารถจำหน่ายเป็น Supplement" },
+
+  // ─── VITAMIN A ───
+  { keywords:["retinol","vitamin a","วิตามินเอ","retinyl acetate","retinyl palmitate"],
+    name:"Vitamin A (วิตามินเอ)", maxActualMg:0.8, unit:"mg RAE/วัน (800 mcg RAE)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 (2566) — สูงสุด 800 mcg RAE/วัน (≈ 2,667 IU)",
+    overNote:"เกินขีดจำกัด → ความเป็นพิษสะสมในตับ (Fat-soluble Toxicity); ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["beta-carotene","beta carotene","betacarotene","เบต้าแคโรทีน"],
+    name:"Beta-Carotene", maxActualMg:7, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Beta-Carotene สูงสุด 7 mg/วัน",
+    overNote:"เกินขีดจำกัด → Carotenemia (ผิวเหลืองส้ม); ความเสี่ยงสูงในผู้สูบบุหรี่" },
+
+  { keywords:["vitamin d","cholecalciferol","ergocalciferol","วิตามินดี"],
+    name:"Vitamin D (วิตามินดี)", maxActualMg:0.015, unit:"mg/วัน (15 mcg = 600 IU)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 15 mcg (600 IU)/วัน สำหรับ Supplement",
+    overNote:"เกิน 15 mcg/วัน → ต้องขึ้นทะเบียนยา; ระวัง Hypercalcemia" },
+
+  { keywords:["tocopherol","vitamin e","วิตามินอี"],
+    name:"Vitamin E (วิตามินอี)", maxActualMg:10, unit:"mg α-TE/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 10 mg α-TE/วัน",
+    overNote:"เกินขีดจำกัด → เพิ่มความเสี่ยงเลือดออก (Anticoagulant effect); ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["vitamin k","phylloquinone","menaquinone","วิตามินเค","vitamin k1","vitamin k2","mk-7","mk7"],
+    name:"Vitamin K (K1/K2)", maxActualMg:0.08, unit:"mg/วัน (80 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 80 mcg/วัน (K1 natural; K2 synthetic = Novel Food)",
+    overNote:"Synthetic Vitamin K2 → จัดเป็น Novel Food ต้องขออนุญาตพิเศษ; มีผลต่อ Warfarin" },
+
+  { keywords:["thiamine","thiamin","vitamin b1","วิตามินบี1"],
+    name:"Vitamin B1 (Thiamine)", maxActualMg:100, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 100 mg/วัน",
+    overNote:"เกินขีดจำกัด → ควรขึ้นทะเบียนยา" },
+
+  { keywords:["riboflavin","vitamin b2","วิตามินบี2"],
+    name:"Vitamin B2 (Riboflavin)", maxActualMg:40, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 40 mg/วัน",
+    overNote:"เกินขีดจำกัด → ปัสสาวะเหลืองสด; ควรขึ้นทะเบียนยา" },
+
+  { keywords:["niacin","nicotinic acid","ไนอาซิน (กรด)"],
+    name:"Niacin (Nicotinic Acid)", maxActualMg:15, unit:"mg NE/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Nicotinic Acid สูงสุด 15 mg NE/วัน",
+    overNote:"เกิน 15 mg → Niacin Flush, ผื่น แดง; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["niacinamide","nicotinamide","ไนอาซินาไมด์"],
+    name:"Niacinamide (Nicotinamide)", maxActualMg:20, unit:"mg NE/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Nicotinamide สูงสุด 20 mg NE/วัน",
+    overNote:"เกินขีดจำกัด → ตับอักเสบที่ปริมาณสูง; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["pantothenic","pantothenate","vitamin b5","วิตามินบี5"],
+    name:"Vitamin B5 (Pantothenic Acid)", maxActualMg:200, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 200 mg/วัน",
+    overNote:"เกินขีดจำกัด → ท้องเสีย; ควรขึ้นทะเบียนยา" },
+
+  { keywords:["pyridoxine","vitamin b6","วิตามินบี6","pyridoxal","pyridoxamine"],
+    name:"Vitamin B6 (Pyridoxine)", maxActualMg:2, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 2 mg/วัน (Thai RDI)",
+    overNote:"เกิน 2 mg/วัน → ต้องขึ้นทะเบียนยา; ปริมาณสูงเรื้อรัง → Neuropathy ส่วนปลาย" },
+
+  { keywords:["folic acid","folate","โฟลิก","folacin"],
+    name:"Folic Acid / Folate", maxActualMg:0.2, unit:"mg/วัน (200 mcg DFE)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 200 mcg DFE/วัน",
+    overNote:"เกิน 200 mcg → ต้องขึ้นทะเบียนยา; อาจซ่อน B12 deficiency" },
+
+  { keywords:["cyanocobalamin","methylcobalamin","vitamin b12","วิตามินบี12","cobalamin"],
+    name:"Vitamin B12", maxActualMg:0.6, unit:"mg/วัน (600 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 600 mcg/วัน",
+    overNote:"เกินขีดจำกัด → ควรขึ้นทะเบียนยา" },
+
+  { keywords:["biotin","ไบโอติน","vitamin b7","vitamin h"],
+    name:"Biotin (Vitamin B7)", maxActualMg:0.9, unit:"mg/วัน (900 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — สูงสุด 900 mcg/วัน",
+    overNote:"เกินขีดจำกัด → รบกวนผล Lab (Troponin, Thyroid Function Test); ควรขึ้นทะเบียนยา" },
+
+  // ══════════════════════════════════════════
+  // MINERALS — ประกาศ ฉบับที่ 448 (มีผล 4 ม.ค. 2567)
+  // ══════════════════════════════════════════
+
+  { keywords:["zinc","สังกะสี","zinc gluconate","zinc sulfate","zinc bisglycinate","zinc citrate","zinc picolinate"],
+    name:"Zinc / สังกะสี (elemental)", maxActualMg:15, unit:"mg elemental/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Zinc สูงสุด 15 mg elemental/วัน",
+    overNote:"เกิน 15 mg elemental Zn → คลื่นไส้ อาเจียน ลดการดูดซึม Copper; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["calcium","แคลเซียม","calcium carbonate","calcium citrate","calcium gluconate"],
+    name:"Calcium / แคลเซียม", maxActualMg:800, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Calcium สูงสุด 800 mg/วัน",
+    overNote:"เกินขีดจำกัด → นิ่วไต, Hypercalcemia; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["magnesium","แมกนีเซียม","magnesium oxide","magnesium citrate","magnesium glycinate"],
+    name:"Magnesium / แมกนีเซียม", maxActualMg:800, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Magnesium สูงสุด 800 mg/วัน",
+    overNote:"เกินขีดจำกัด → ท้องเสีย, Hypermagnesemia; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["iron","ferrous","ferric","เหล็ก","ธาตุเหล็ก","ferrous sulfate","ferrous gluconate","ferrous fumarate"],
+    name:"Iron / ธาตุเหล็ก (elemental)", maxActualMg:18, unit:"mg elemental/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Iron สูงสุด 18 mg elemental/วัน (Thai RDI หญิง)",
+    overNote:"เกิน 18 mg elemental → ท้องผูก, ท้องเสีย; ปริมาณยา (เช่น 200 mg) ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["phosphorus","phosphate","ฟอสฟอรัส"],
+    name:"Phosphorus / ฟอสฟอรัส", maxActualMg:350, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Phosphorus สูงสุด 350 mg/วัน (supplemental)",
+    overNote:"เกินขีดจำกัด → ไม่สมดุล Ca:P ratio; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["selenium","ซีลีเนียม","selenomethionine","selenium yeast"],
+    name:"Selenium / ซีลีเนียม", maxActualMg:0.16, unit:"mg/วัน (160 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Selenium สูงสุด 160 mcg/วัน",
+    overNote:"เกินขีดจำกัด → Selenosis (ผมร่วง เล็บเปราะ กลิ่นกระเทียม); ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["iodine","iodide","ไอโอดีน","potassium iodide"],
+    name:"Iodine / ไอโอดีน", maxActualMg:0.15, unit:"mg/วัน (150 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Iodine สูงสุด 150 mcg/วัน",
+    overNote:"เกินขีดจำกัด → กระทบต่อ Thyroid; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["copper","ทองแดง","copper gluconate","copper sulfate"],
+    name:"Copper / ทองแดง", maxActualMg:15, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Copper สูงสุด 15 mg/วัน",
+    overNote:"เกินขีดจำกัด → ตับเสียหาย; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["chromium","โครเมียม","chromium picolinate","chromium polynicotinate"],
+    name:"Chromium / โครเมียม", maxActualMg:2, unit:"mg/วัน (2,000 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Chromium สูงสุด 2,000 mcg/วัน",
+    overNote:"เกินขีดจำกัด → ความเสียหายต่อไตและตับ; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["molybdenum","โมลิบดีนัม"],
+    name:"Molybdenum / โมลิบดีนัม", maxActualMg:0.5, unit:"mg/วัน (500 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Molybdenum สูงสุด 500 mcg/วัน",
+    overNote:"เกินขีดจำกัด → ปวดข้อ (Gout-like); ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["manganese","แมงกานีส"],
+    name:"Manganese / แมงกานีส", maxActualMg:0.07, unit:"mg/วัน (70 mcg)",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Manganese สูงสุด 70 mcg/วัน",
+    overNote:"เกินขีดจำกัด → Manganism (ปัญหาระบบประสาท); ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["potassium","โพแทสเซียม","potassium chloride","potassium citrate"],
+    name:"Potassium / โพแทสเซียม", maxActualMg:3500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ ฉบับที่ 448 — Potassium สูงสุด 3,500 mg/วัน",
+    overNote:"เกินขีดจำกัด → Hyperkalemia; อันตรายในผู้ป่วยโรคไต" },
+
+  // ══════════════════════════════════════════
+  // PLANT EXTRACTS — 444 ชนิด (ประกาศ 8 ก.ค. 2567)
+  // ══════════════════════════════════════════
+
+  { keywords:["collagen","คอลลาเจน","marine collagen","bovine collagen","collagen peptide","hydrolyzed collagen"],
+    name:"Collagen Peptide (Marine/Bovine)", maxActualMg:10000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็นส่วนผสมอาหาร — GRAS; ปกติ ≤ 10,000 mg/วัน",
+    overNote:"ปริมาณสูงมาก (>10,000 mg) → แนบข้อมูลความปลอดภัยเพิ่มเติม" },
+
+  { keywords:["glutathione","กลูตาไธโอน","reduced glutathione","l-glutathione"],
+    name:"Glutathione", maxActualMg:100, unit:"mg/วัน",
+    status:"restricted",
+    ref:"อย. ไทย: Glutathione — Gray Area; ≤ 100 mg อาจอนุมัติเป็น Supplement",
+    overNote:"> 100 mg/วัน → เสี่ยงต้องขึ้นทะเบียนยา ตรวจสอบกับ อย. ก่อนผลิต" },
+
+  { keywords:["blackberry","แบล็คเบอร์รี","rubus fruticosus","rubus allegheniensis"],
+    name:"Blackberry (Rubus fruticosus)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด (8 ก.ค. 2567) — Rubus spp. อนุมัติ",
+    overNote:"ปริมาณสูงมาก → แนบข้อมูลความปลอดภัย" },
+
+  { keywords:["blueberry","บลูเบอร์รี","vaccinium corymbosum","vaccinium angustifolium"],
+    name:"Blueberry (Vaccinium corymbosum)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด (8 ก.ค. 2567) — Vaccinium spp. อนุมัติ",
+    overNote:"ปริมาณสูงมาก → แนบข้อมูลความปลอดภัย" },
+
+  { keywords:["bilberry","บิลเบอร์รี","vaccinium myrtillus"],
+    name:"Bilberry (Vaccinium myrtillus)", maxActualMg:480, unit:"mg/วัน (standardized 36% anthocyanin)",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Vaccinium myrtillus อนุมัติ",
+    overNote:"สารสกัดมาตรฐาน 36% Anthocyanin; ปริมาณสูงมาก → ตรวจสอบ อย." },
+
+  { keywords:["acerola","อะเซโรลา","malpighia emarginata","malpighia glabra","barbados cherry"],
+    name:"Acerola (Malpighia emarginata)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Malpighia spp. อนุมัติ; Vit C จาก Acerola นับรวมขีดจำกัด Vit C",
+    overNote:"Acerola สูง Vit C (~1,677 mg/100g) → ต้องนับรวมปริมาณ Vit C ทั้งหมดไม่เกิน 1,000 mg/วัน" },
+
+  { keywords:["cranberry","แครนเบอร์รี","vaccinium macrocarpon"],
+    name:"Cranberry (Vaccinium macrocarpon)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Vaccinium macrocarpon อนุมัติ",
+    overNote:"สารสกัดมาตรฐาน PACs (Proanthocyanidins) 36 mg/วัน สำหรับ UTI prevention" },
+
+  { keywords:["strawberry","สตรอว์เบอร์รี","fragaria"],
+    name:"Strawberry (Fragaria spp.)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Fragaria spp. อนุมัติ",
+    overNote:"ปริมาณสูงมาก → แนบข้อมูลความปลอดภัย" },
+
+  { keywords:["raspberry","ราสเบอร์รี","rubus idaeus"],
+    name:"Raspberry (Rubus idaeus)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Rubus idaeus อนุมัติ",
+    overNote:"" },
+
+  { keywords:["rosehip","โรสฮิป","rosa canina","rosa eglanteria"],
+    name:"Rosehip (Rosa canina)", maxActualMg:2000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Rosa canina อนุมัติ",
+    overNote:"Rosehip สูง Vit C → ต้องนับรวมปริมาณ Vit C ทั้งหมดไม่เกิน 1,000 mg/วัน" },
+
+  { keywords:["ginseng","โสม","panax ginseng","korean ginseng","ginsenoside"],
+    name:"Ginseng (Panax ginseng)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Panax ginseng สูงสุด 1,000 mg/วัน",
+    overNote:"เกินขีดจำกัด → Ginseng Abuse Syndrome; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["turmeric","ขมิ้น","curcuma longa","curcumin","เคอร์คูมิน"],
+    name:"Turmeric / Curcumin (Curcuma longa)", maxActualMg:500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Curcuma longa สูงสุด 500 mg/วัน",
+    overNote:"เกินขีดจำกัด → ระคายกระเพาะ; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["ginkgo","กิงโก้","ginkgo biloba","ginkgolide"],
+    name:"Ginkgo Biloba", maxActualMg:240, unit:"mg/วัน (standardized 24% flavonoid)",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Ginkgo biloba สูงสุด 240 mg/วัน",
+    overNote:"เกินขีดจำกัด → ปวดหัว เวียนหัว; มีผลต่อยาละลายลิ่มเลือด" },
+
+  { keywords:["garlic","กระเทียม","allium sativum","allicin"],
+    name:"Garlic (Allium sativum)", maxActualMg:1200, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Allium sativum สูงสุด 1,200 mg/วัน",
+    overNote:"เกินขีดจำกัด → กลิ่นปาก ระคายกระเพาะ; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["aloe vera","ว่านหางจระเข้","aloe barbadensis"],
+    name:"Aloe Vera (Aloe barbadensis)", maxActualMg:500, unit:"mg/วัน (inner gel)",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Aloe barbadensis อนุมัติ (Inner gel เท่านั้น)",
+    overNote:"Whole leaf (มี Aloin) → Anthraquinone สูง อาจท้องเสียรุนแรง; ใช้เฉพาะ Decolorized/Inner Gel" },
+
+  { keywords:["moringa","มะรุม","moringa oleifera"],
+    name:"Moringa (Moringa oleifera)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Moringa oleifera อนุมัติ",
+    overNote:"ปริมาณสูงมาก → แนบข้อมูลความปลอดภัย; ระวังในหญิงตั้งครรภ์" },
+
+  { keywords:["ginger","ขิง","zingiber officinale","gingerol"],
+    name:"Ginger (Zingiber officinale)", maxActualMg:2000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Zingiber officinale สูงสุด 2,000 mg/วัน",
+    overNote:"เกินขีดจำกัด → แสบร้อนกลางอก; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["chamomile","คาโมมายล์","matricaria chamomilla","matricaria recutita"],
+    name:"Chamomile (Matricaria chamomilla)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Matricaria chamomilla อนุมัติ",
+    overNote:"ระวังในผู้แพ้พืชตระกูล Asteraceae" },
+
+  { keywords:["centella","ใบบัวบก","centella asiatica","gotu kola","asiaticoside"],
+    name:"Centella asiatica / ใบบัวบก", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Centella asiatica อนุมัติ",
+    overNote:"ปริมาณสูง → ระคายกระเพาะ ปวดหัว; ระวังในผู้ป่วยตับ" },
+
+  { keywords:["mangosteen","มังคุด","garcinia mangostana","xanthone","แซนโทน"],
+    name:"Mangosteen (Garcinia mangostana)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Garcinia mangostana อนุมัติ",
+    overNote:"Xanthone สูง → ตรวจสอบความปลอดภัย; ระวังมีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["reishi","เห็ดหลินจือ","ganoderma lucidum","ganoderma"],
+    name:"Reishi Mushroom (Ganoderma lucidum)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Ganoderma lucidum อนุมัติ",
+    overNote:"ปริมาณสูงมาก → ปากแห้ง คลื่นไส้; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["black pepper","พริกไทยดำ","piper nigrum","bioperine","piperine"],
+    name:"Black Pepper / Piperine (Piper nigrum)", maxActualMg:20, unit:"mg/วัน (Piperine)",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Piper nigrum อนุมัติ; Piperine ≤ 20 mg",
+    overNote:"Piperine เกิน 20 mg → เพิ่มการดูดซึมยาอื่น (Drug interaction)" },
+
+  { keywords:["jiaogulan","จิ่วกู่หลัน","gynostemma pentaphyllum"],
+    name:"Jiaogulan (Gynostemma pentaphyllum)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Gynostemma pentaphyllum อนุมัติ",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; ระวังในผู้ป่วย autoimmune" },
+
+  { keywords:["black ginger","กระชายดำ","kaempferia parviflora"],
+    name:"Black Ginger (Kaempferia parviflora)", maxActualMg:500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Kaempferia parviflora อนุมัติ",
+    overNote:"" },
+
+  { keywords:["bitter orange","ส้มขม","citrus aurantium","synephrine"],
+    name:"Bitter Orange (Citrus aurantium)", maxActualMg:500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Citrus aurantium อนุมัติ",
+    overNote:"Synephrine → เพิ่มความดันโลหิต หัวใจเต้นเร็ว; ระวังในผู้ป่วยโรคหัวใจ" },
+
+  { keywords:["carrot","แคร์รอท","daucus carota"],
+    name:"Carrot Extract (Daucus carota)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Daucus carota อนุมัติ",
+    overNote:"" },
+
+  { keywords:["spirulina","สไปรูลินา","arthrospira"],
+    name:"Spirulina (Arthrospira platensis)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็นอาหาร — ปกติไม่เกิน 3,000 mg/วัน",
+    overNote:"ตรวจสอบ Heavy Metal contamination จากแหล่งผลิต" },
+
+  { keywords:["chlorophyll","chlorophyllin","คลอโรฟิลล์"],
+    name:"Chlorophyll / Chlorophyllin", maxActualMg:300, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็นสีและสารอาหารเสริม ≤ 300 mg/วัน",
+    overNote:"เกินขีดจำกัด → อุจจาระเขียว คลื่นไส้; ตรวจสอบกับ อย." },
+
+  { keywords:["green tea","ชาเขียว","egcg","camellia sinensis"],
+    name:"Green Tea Extract (Camellia sinensis)", maxActualMg:300, unit:"mg EGCG/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Camellia sinensis; EGCG ≤ 300 mg/วัน",
+    overNote:"EGCG > 300 mg/วัน → Hepatotoxicity (ตับอักเสบ); ปริมาณ Total extract ≤ 800 mg" },
+
+  { keywords:["milk thistle","silymarin","silybum","มิลค์ทิสเซิล"],
+    name:"Milk Thistle (Silymarin)", maxActualMg:420, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Silybum marianum อนุมัติ; Silymarin ≤ 420 mg",
+    overNote:"เกินขีดจำกัด → ระวังมีผลต่อยา CYP450" },
+
+  { keywords:["elderberry","sambucus","เอลเดอร์เบอร์รี"],
+    name:"Elderberry (Sambucus nigra)", maxActualMg:1500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Sambucus nigra อนุมัติ",
+    overNote:"ใช้เฉพาะ Standardized Extract (ไม่ใช่วัตถุดิบดิบ) → Cyanogenic glycosides" },
+
+  { keywords:["marigold","ดาวเรือง","tagetes erecta","tagetes"],
+    name:"Marigold (Tagetes erecta)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Tagetes erecta อนุมัติ (แหล่ง Lutein)",
+    overNote:"" },
+
+  // ══════════════════════════════════════════
+  // OTHER NUTRIENTS & BIOACTIVES
+  // ══════════════════════════════════════════
+
+  { keywords:["coq10","coenzyme q10","ubiquinol","ubiquinone","โคคิวเท็น"],
+    name:"Coenzyme Q10 (CoQ10)", maxActualMg:300, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — CoQ10 ≤ 300 mg/วัน (ทั่วไปยอมรับใน ASEAN)",
+    overNote:"ปริมาณสูงมาก → อาจมีผลต่อยาต้านการแข็งตัวเลือด; ตรวจสอบกับ อย." },
+
+  { keywords:["lutein","ลูทีน"],
+    name:"Lutein", maxActualMg:20, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ (จาก Tagetes erecta ในรายการ 444 ชนิด) — Lutein ≤ 20 mg/วัน",
+    overNote:"เกินขีดจำกัด → Carotenodermia (ผิวเหลือง)" },
+
+  { keywords:["lycopene","ไลโคปีน"],
+    name:"Lycopene", maxActualMg:15, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Lycopene ≤ 15 mg/วัน (จากมะเขือเทศ/สังเคราะห์)",
+    overNote:"เกินขีดจำกัด → Lycopenemia; ตรวจสอบ source (synthetic vs natural)" },
+
+  { keywords:["astaxanthin","แอสตาแซนธิน","haematococcus"],
+    name:"Astaxanthin (Haematococcus pluvialis)", maxActualMg:12, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Astaxanthin ≤ 12 mg/วัน (natural source)",
+    overNote:"Synthetic Astaxanthin → ตรวจสอบสถานะกับ อย. เพิ่มเติม" },
+
+  { keywords:["quercetin","เควอร์เซทิน"],
+    name:"Quercetin", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ (สกัดจากพืชในรายการ 444 ชนิด) — ≤ 1,000 mg/วัน",
+    overNote:"ปริมาณสูงมาก → ระวังมีผลต่อ CYP3A4; ตรวจสอบกับ อย." },
+
+  { keywords:["rutin","รูทิน"],
+    name:"Rutin", maxActualMg:500, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ (สกัดจากพืช) — Rutin ≤ 500 mg/วัน",
+    overNote:"" },
+
+  { keywords:["resveratrol","เรสเวอราทรอล"],
+    name:"Resveratrol", maxActualMg:500, unit:"mg/วัน",
+    status:"restricted",
+    ref:"อย. ไทย — Resveratrol อยู่ระหว่างการพิจารณา; ตรวจสอบสถานะ Novel Food",
+    overNote:"ควรตรวจสอบกับ อย. ก่อนขึ้นทะเบียน; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["omega","fish oil","น้ำมันปลา","dha","epa","docosahexaenoic","eicosapentaenoic"],
+    name:"Omega-3 / Fish Oil (DHA+EPA)", maxActualMg:5000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Omega-3 (DHA+EPA) ≤ 5,000 mg/วัน; GRAS",
+    overNote:"เกิน 5,000 mg → เพิ่มความเสี่ยงเลือดออก; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  // ── AMINO ACIDS ──
+  { keywords:["l-glutamine","glutamine","กลูตามีน"],
+    name:"L-Glutamine", maxActualMg:5000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Amino Acid supplement — ≤ 5,000 mg/วัน",
+    overNote:"" },
+
+  { keywords:["l-arginine","arginine","อาร์จินีน"],
+    name:"L-Arginine", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Amino Acid supplement — ≤ 3,000 mg/วัน",
+    overNote:"ปริมาณสูง → ท้องเสีย; ระวังในผู้ป่วย Herpes" },
+
+  { keywords:["l-carnitine","carnitine","คาร์นิทีน"],
+    name:"L-Carnitine", maxActualMg:2000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — L-Carnitine ≤ 2,000 mg/วัน",
+    overNote:"เกิน 2,000 mg → กลิ่นคาวปลา (TMAO); ตรวจสอบกับ อย." },
+
+  { keywords:["taurine","เทารีน"],
+    name:"Taurine", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Taurine ≤ 3,000 mg/วัน",
+    overNote:"" },
+
+  { keywords:["l-theanine","theanine","ธีอะนีน"],
+    name:"L-Theanine", maxActualMg:400, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — L-Theanine ≤ 400 mg/วัน (สกัดจากชา)",
+    overNote:"" },
+
+  { keywords:["l-lysine","lysine","ไลซีน"],
+    name:"L-Lysine", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Amino Acid supplement — ≤ 3,000 mg/วัน",
+    overNote:"" },
+
+  { keywords:["leucine","isoleucine","valine","bcaa","บีซีเอเอ"],
+    name:"BCAA (Leucine/Isoleucine/Valine)", maxActualMg:5000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Amino Acid supplement",
+    overNote:"" },
+
+  // ── NOVEL FOODS (ต้องขอนุมัติพิเศษ) ──
+  { keywords:["hyaluronic acid","hyaluronan","ไฮยาลูรอนิก","ha supplement"],
+    name:"Hyaluronic Acid", maxActualMg:200, unit:"mg/วัน",
+    status:"restricted",
+    ref:"อย. ไทย: Hyaluronic Acid = Novel Food (ประกาศ อย. 2565) — ต้องขออนุญาตพิเศษ",
+    overNote:"Novel Food → ต้องยื่นแฟ้ม Safety Dossier กับ อย. ก่อนผลิต" },
+
+  { keywords:["nmn","nicotinamide mononucleotide","beta-nmn"],
+    name:"NMN (Beta-Nicotinamide Mononucleotide)", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: NMN = Novel Food (ประกาศ อย. 2565) — ยังไม่ได้รับอนุมัติให้จำหน่ายเป็น Supplement",
+    overNote:"ต้องยื่นขอ Novel Food Approval จาก อย. ก่อนผลิต/นำเข้า" },
+
+  { keywords:["msm","methyl sulfonyl methane","methylsulfonylmethane","dimethyl sulfone"],
+    name:"MSM (Methyl Sulfonyl Methane)", maxActualMg:0, unit:"—",
+    status:"restricted",
+    ref:"อย. ไทย: MSM = Novel Food (ประกาศ อย. 2565) — ต้องขออนุมัติพิเศษ",
+    overNote:"Novel Food → ต้องยื่น Safety Dossier กับ อย. ก่อนผลิต" },
+
+  { keywords:["allulose","อัลลูโลส","d-allulose","psicose"],
+    name:"Allulose", maxActualMg:0, unit:"—",
+    status:"restricted",
+    ref:"อย. ไทย: Allulose = Novel Food — ต้องขออนุมัติพิเศษ",
+    overNote:"Novel Food → ต้องยื่น Safety Dossier กับ อย. ก่อนใช้เป็นส่วนผสม" },
+
+  // ── EXCIPIENTS ──
+  { keywords:["magnesium stearate","แมกนีเซียมสเตียเรต"],
+    name:"Magnesium Stearate (Lubricant)", maxActualMg:2000, unit:"mg/วัน",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient — GRAS", overNote:"" },
+
+  { keywords:["microcrystalline cellulose","mcc","เซลลูโลส","avicel"],
+    name:"Microcrystalline Cellulose (MCC)", maxActualMg:99999, unit:"—",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient — GRAS", overNote:"" },
+
+  { keywords:["silicon dioxide","sio2","silica","ซิลิกา","aerosil"],
+    name:"Silicon Dioxide (Anti-caking)", maxActualMg:99999, unit:"—",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient — GRAS", overNote:"" },
+
+  { keywords:["hypromellose","hpmc","hydroxypropyl methylcellulose"],
+    name:"HPMC / Hypromellose (Coating)", maxActualMg:99999, unit:"—",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient / Film Coat — GRAS", overNote:"" },
+
+  { keywords:["stearic acid","กรดสเตียริก"],
+    name:"Stearic Acid (Lubricant)", maxActualMg:99999, unit:"—",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient — GRAS", overNote:"" },
+
+  { keywords:["dicalcium phosphate","dibasic calcium phosphate","dcp"],
+    name:"Dicalcium Phosphate (Diluent)", maxActualMg:99999, unit:"—",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient — GRAS", overNote:"" },
+
+  { keywords:["croscarmellose","crospovidone","sodium starch glycolate","disintegrant"],
+    name:"Disintegrant (Croscarmellose/Crospovidone)", maxActualMg:99999, unit:"—",
+    status:"approved", ref:"อย. อนุมัติเป็น Excipient — GRAS", overNote:"" },
+
+  // ══════════════════════════════════════════
+  // PROBIOTICS & PREBIOTICS
+  // ══════════════════════════════════════════
+
+  { keywords:["lactobacillus","bifidobacterium","probiotic","โปรไบโอติก","lacidofil","lactobacillus acidophilus","lb rhamnosus","lb reuteri"],
+    name:"Probiotics (Lactobacillus/Bifidobacterium)", maxActualMg:10000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Probiotics เป็นส่วนผสมอาหาร; สายพันธุ์รับรอง GRAS/EFSA ≤ 1×10¹⁰ CFU/วัน",
+    overNote:"ระบุ Strain ในฉลากให้ครบ; ≥ 10¹⁰ CFU → ตรวจสอบเพิ่มเติม" },
+
+  { keywords:["inulin","fos","fructooligosaccharide","prebiotic","chicory root","ไอนูลิน"],
+    name:"Inulin / FOS (Prebiotic)", maxActualMg:15000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Dietary Fiber — GRAS",
+    overNote:"ปริมาณสูง (>15,000 mg) → ท้องอืด ท้องเสีย" },
+
+  // ══════════════════════════════════════════
+  // JOINT HEALTH
+  // ══════════════════════════════════════════
+
+  { keywords:["glucosamine","กลูโคซามีน","glucosamine sulfate","glucosamine hcl","glucosamine hydrochloride"],
+    name:"Glucosamine", maxActualMg:1500, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Glucosamine ≤ 1,500 mg/วัน สำหรับ Supplement",
+    overNote:"ระวังในผู้แพ้กุ้งหอยปู (Shellfish allergy); มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["chondroitin","คอนดรอยทิน","chondroitin sulfate"],
+    name:"Chondroitin Sulfate", maxActualMg:1200, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Chondroitin Sulfate ≤ 1,200 mg/วัน",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; ตรวจสอบแหล่งที่มา (bovine/shark)" },
+
+  // ══════════════════════════════════════════
+  // ANTIOXIDANT PLANT EXTRACTS
+  // ══════════════════════════════════════════
+
+  { keywords:["grape seed","gse","opc","procyanidin","สารสกัดเมล็ดองุ่น","vitis vinifera seed","grape seed extract"],
+    name:"Grape Seed Extract (OPC)", maxActualMg:300, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Vitis vinifera อนุมัติ; OPC ≤ 300 mg/วัน",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; ตรวจสอบความเข้มข้น OPC %" },
+
+  { keywords:["pine bark","pycnogenol","ไพน์บาร์ค","pinus pinaster","pinus maritima"],
+    name:"Pine Bark Extract (Pycnogenol)", maxActualMg:300, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Pine Bark Extract (OPC) ≤ 300 mg/วัน",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; มีผลลดความดันโลหิต" },
+
+  { keywords:["alpha lipoic acid","ala","กรดอัลฟาไลโปอิก","lipoic acid","r-lipoic acid","r lipoic"],
+    name:"Alpha Lipoic Acid (ALA)", maxActualMg:600, unit:"mg/วัน",
+    status:"restricted",
+    ref:"อย. ไทย: ALA อยู่ระหว่างการพิจารณา — ≤ 600 mg อาจอนุมัติเป็น Supplement",
+    overNote:"ตรวจสอบกับ อย. ก่อนขึ้นทะเบียน; ลดน้ำตาลในเลือด (ระวังในผู้ป่วยเบาหวาน)" },
+
+  { keywords:["pomegranate","ทับทิม","punica granatum"],
+    name:"Pomegranate (Punica granatum)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Punica granatum อนุมัติ",
+    overNote:"มีผลต่อยา CYP3A4 (คล้าย Grapefruit effect)" },
+
+  { keywords:["hibiscus","กระเจี๊ยบ","roselle","hibiscus sabdariffa"],
+    name:"Hibiscus / Roselle (Hibiscus sabdariffa)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Hibiscus sabdariffa อนุมัติ",
+    overNote:"ลดความดันโลหิต — ระวังในผู้ที่ทานยาลดความดัน" },
+
+  { keywords:["goji","wolfberry","โกจิ","lycium","lycium barbarum","lycium chinense"],
+    name:"Goji Berry (Lycium barbarum)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Lycium barbarum อนุมัติ",
+    overNote:"มีผลต่อยา Warfarin; ระวังในผู้ป่วย autoimmune" },
+
+  { keywords:["acai","อาซาอิ","euterpe oleracea","acai berry"],
+    name:"Acai Berry (Euterpe oleracea)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Euterpe oleracea อนุมัติ",
+    overNote:"ปริมาณสูงมาก → แนบข้อมูลความปลอดภัยเพิ่มเติม" },
+
+  { keywords:["grape","องุ่น","vitis vinifera fruit"],
+    name:"Grape Extract (Vitis vinifera)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Vitis vinifera อนุมัติ",
+    overNote:"" },
+
+  { keywords:["peppermint","สะระแหน่","mentha piperita","menthol"],
+    name:"Peppermint (Mentha piperita)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Mentha piperita อนุมัติ",
+    overNote:"Menthol สูง → ระวังในเด็กเล็ก (Laryngospasm); ระวังผู้ป่วย GERD" },
+
+  { keywords:["cinnamon","อบเชย","cinnamomum","cassia","ceylon cinnamon","cinnamomum verum","cinnamomum cassia"],
+    name:"Cinnamon Extract (Cinnamomum spp.)", maxActualMg:2000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Cinnamomum spp. อนุมัติ",
+    overNote:"Cassia cinnamon สูง Coumarin → ระวังผลต่อตับ; ใช้ Ceylon cinnamon ปลอดภัยกว่า; ลดน้ำตาลในเลือด" },
+
+  { keywords:["black seed","nigella","เมล็ดดำ","nigella sativa","thymoquinone","kalonji","habbatus sauda"],
+    name:"Black Seed (Nigella sativa)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Nigella sativa อนุมัติ",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; ลดน้ำตาลในเลือด" },
+
+  { keywords:["astragalus","หวงฉี","milk vetch","astragalus membranaceus","astragalus mongholicus"],
+    name:"Astragalus / Milk Vetch (Astragalus membranaceus)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Astragalus membranaceus อนุมัติ",
+    overNote:"มีผลต่อยากดภูมิคุ้มกัน" },
+
+  { keywords:["saffron","หญ้าฝรั่น","crocus sativus","safranal"],
+    name:"Saffron (Crocus sativus)", maxActualMg:200, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Crocus sativus อนุมัติ; ≤ 200 mg/วัน",
+    overNote:"ปริมาณสูงมาก (>5 g) → เป็นพิษ; ระวังในหญิงตั้งครรภ์" },
+
+  { keywords:["hawthorn","ฮอว์ธอร์น","crataegus","crataegus monogyna","crataegus laevigata"],
+    name:"Hawthorn (Crataegus spp.)", maxActualMg:1800, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Crataegus spp. อนุมัติ",
+    overNote:"มีผลต่อยาหัวใจ (Digoxin); ระวังในผู้ป่วยโรคหัวใจที่ใช้ยาอยู่" },
+
+  { keywords:["artichoke","อาร์ติโชค","cynara scolymus","cynara cardunculus"],
+    name:"Artichoke Extract (Cynara scolymus)", maxActualMg:1800, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Cynara scolymus อนุมัติ",
+    overNote:"ระวังในผู้แพ้พืชตระกูล Asteraceae" },
+
+  { keywords:["dandelion","แดนดิไลออน","taraxacum"],
+    name:"Dandelion (Taraxacum officinale)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Taraxacum officinale อนุมัติ",
+    overNote:"มีผลขับปัสสาวะ; ระวังมีผลต่อยาขับปัสสาวะ" },
+
+  // ══════════════════════════════════════════
+  // ADAPTOGENS / BRAIN HEALTH
+  // ══════════════════════════════════════════
+
+  { keywords:["ashwagandha","วิทาเนีย","withania somnifera","withanolide","ksm-66","sensoril"],
+    name:"Ashwagandha (Withania somnifera)", maxActualMg:600, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Withania somnifera อนุมัติ; ≤ 600 mg/วัน",
+    overNote:"ปริมาณสูง → ระคายกระเพาะ; ระวังในหญิงตั้งครรภ์ (Abortifacient)" },
+
+  { keywords:["rhodiola","โรดิโอลา","rhodiola rosea","salidroside","rosavins"],
+    name:"Rhodiola rosea", maxActualMg:600, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Rhodiola rosea อนุมัติ",
+    overNote:"ระวังในผู้ป่วย bipolar disorder; มีผลต่อยากดภูมิคุ้มกัน" },
+
+  { keywords:["holy basil","กะเพรา","tulsi","ocimum tenuiflorum","ocimum sanctum"],
+    name:"Holy Basil / Tulsi (Ocimum tenuiflorum)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Ocimum tenuiflorum อนุมัติ",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; ลดน้ำตาลในเลือด; ระวังในหญิงตั้งครรภ์" },
+
+  { keywords:["bacopa","บาโคปา","brahmi","bacopa monnieri","bacoside"],
+    name:"Bacopa monnieri (Brahmi)", maxActualMg:300, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Bacopa monnieri อนุมัติ; ≤ 300 mg/วัน",
+    overNote:"ออกฤทธิ์ช้า (8-12 สัปดาห์); ระวังในผู้ป่วยโรคไทรอยด์; ท้องเสียถ้าไม่ทานพร้อมอาหาร" },
+
+  // ══════════════════════════════════════════
+  // MUSHROOMS
+  // ══════════════════════════════════════════
+
+  { keywords:["lion's mane","lions mane","hericium","เห็ดไลออนส์เมน","hericium erinaceus"],
+    name:"Lion's Mane (Hericium erinaceus)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Hericium erinaceus อนุมัติ",
+    overNote:"ตรวจสอบ Heavy Metal contamination; ระวังในผู้แพ้เห็ด" },
+
+  { keywords:["cordyceps","ถั่งเช่า","cordyceps militaris","cordyceps sinensis"],
+    name:"Cordyceps (Cordyceps militaris/sinensis)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Cordyceps spp. อนุมัติ",
+    overNote:"มีผลต่อยากดภูมิคุ้มกัน; ระวังในผู้ป่วยโรคออโตอิมมูน" },
+
+  { keywords:["chaga","เห็ดชาก้า","inonotus obliquus"],
+    name:"Chaga Mushroom (Inonotus obliquus)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Inonotus obliquus อนุมัติ",
+    overNote:"Oxalate สูง — ระวังในผู้มีนิ่วไต; มีผลต่อยาต้านการแข็งตัวเลือด; ระวัง Warfarin" },
+
+  // ══════════════════════════════════════════
+  // ENZYMES
+  // ══════════════════════════════════════════
+
+  { keywords:["bromelain","โบรเมเลน","pineapple enzyme","ananas comosus"],
+    name:"Bromelain (สับปะรด)", maxActualMg:500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Ananas comosus อนุมัติ",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด; ระวังผู้แพ้สับปะรด; มีผลต่อยาปฏิชีวนะ (Amoxicillin)" },
+
+  { keywords:["papain","พาเพน","papaya enzyme","carica papaya"],
+    name:"Papain / Papaya Enzyme (Carica papaya)", maxActualMg:500, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Carica papaya อนุมัติ",
+    overNote:"ระวังผู้แพ้มะละกอ; มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  // ══════════════════════════════════════════
+  // FATTY ACIDS / OILS
+  // ══════════════════════════════════════════
+
+  { keywords:["evening primrose","กรดแกมม่าไลโนเลนิก","primrose oil","oenothera biennis"],
+    name:"Evening Primrose Oil (GLA)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Evening Primrose Oil ≤ 3,000 mg/วัน; GLA ≤ 300 mg",
+    overNote:"GLA ปริมาณสูง → มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  { keywords:["flaxseed","linseed","flax seed","linum usitatissimum","น้ำมันเมล็ดแฟลกซ์"],
+    name:"Flaxseed Oil (ALA Omega-3)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Flaxseed Oil ≤ 3,000 mg/วัน",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  // ══════════════════════════════════════════
+  // AMINO ACIDS (ADDITIONAL)
+  // ══════════════════════════════════════════
+
+  { keywords:["glycine","ไกลซีน"],
+    name:"Glycine", maxActualMg:10000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Amino Acid supplement — GRAS",
+    overNote:"" },
+
+  { keywords:["proline","โพรลีน","l-proline"],
+    name:"L-Proline", maxActualMg:5000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Amino Acid supplement — GRAS",
+    overNote:"" },
+
+  { keywords:["cysteine","nac","n-acetyl cysteine","n-acetylcysteine","acetylcysteine","ซิสทีน"],
+    name:"N-Acetyl Cysteine (NAC)", maxActualMg:600, unit:"mg/วัน",
+    status:"restricted",
+    ref:"อย. ไทย: NAC ≤ 600 mg/วัน อาจอนุมัติเป็น Supplement; ปริมาณยา (>600 mg) ต้องขึ้นทะเบียนยา",
+    overNote:"ตรวจสอบกับ อย. ก่อนขึ้นทะเบียน; มีผลต่อยาบางชนิด (Nitroglycerin)" },
+
+  { keywords:["inositol","อิโนซิทอล","myo-inositol","myoinositol","d-chiro-inositol"],
+    name:"Inositol (Myo-Inositol)", maxActualMg:4000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Inositol ≤ 4,000 mg/วัน",
+    overNote:"ปริมาณสูง (>4,000 mg) → ท้องเสีย คลื่นไส้" },
+
+  { keywords:["choline","โคลีน","choline bitartrate","choline chloride","cdp-choline","citicoline","alpha gpc"],
+    name:"Choline / Citicoline (CDP-Choline)", maxActualMg:3500, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Choline ≤ 3,500 mg/วัน (AI สูงสุด)",
+    overNote:"ปริมาณสูงมาก → กลิ่นคาวปลา (TMAO)" },
+
+  { keywords:["acetyl l-carnitine","alcar","acetylcarnitine","acetyl-l-carnitine"],
+    name:"Acetyl-L-Carnitine (ALCAR)", maxActualMg:2000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — ALCAR (Acetylated L-Carnitine) ≤ 2,000 mg/วัน",
+    overNote:"" },
+
+  // ══════════════════════════════════════════
+  // BEE PRODUCTS / PROTEIN
+  // ══════════════════════════════════════════
+
+  { keywords:["propolis","โปรโพลิส"],
+    name:"Propolis", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Propolis ≤ 1,000 mg/วัน",
+    overNote:"ระวังในผู้แพ้ผึ้งหรือผลิตภัณฑ์จากผึ้ง" },
+
+  { keywords:["royal jelly","นมผึ้ง"],
+    name:"Royal Jelly (นมผึ้ง)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Royal Jelly ≤ 1,000 mg/วัน",
+    overNote:"ระวังในผู้แพ้ผึ้ง; ห้ามในผู้ป่วยโรคหอบหืด" },
+
+  { keywords:["colostrum","โคลอสตรัม","bovine colostrum"],
+    name:"Bovine Colostrum (โคลอสตรัม)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Bovine Colostrum เป็นส่วนผสมอาหาร",
+    overNote:"ระวังในผู้แพ้นมวัว" },
+
+  { keywords:["whey protein","เวย์โปรตีน","whey","whey concentrate","whey isolate"],
+    name:"Whey Protein", maxActualMg:40000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติเป็น Special Food (อาหารโปรตีนสูง) — GRAS",
+    overNote:"ระวังในผู้แพ้นมวัว (Milk Allergy); ปริมาณสูงมาก → ภาระไต" },
+
+  // ══════════════════════════════════════════
+  // OTHER BIOACTIVES
+  // ══════════════════════════════════════════
+
+  { keywords:["beta glucan","beta-glucan","เบต้ากลูแคน","oat beta","yeast beta glucan"],
+    name:"Beta-Glucan (Oat/Yeast)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Beta-Glucan (Oat/Barley) อนุมัติเป็น Dietary Fiber; Health claim FDA ลดคอเลสเตอรอล",
+    overNote:"" },
+
+  { keywords:["chlorella","คลอเรลลา","chlorella vulgaris","chlorella pyrenoidosa"],
+    name:"Chlorella (Chlorella vulgaris)", maxActualMg:3000, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Chlorella เป็น Microalgae food supplement",
+    overNote:"ตรวจสอบ Heavy Metal contamination; Vitamin K สูง — ระวังในผู้ทาน Warfarin" },
+
+  { keywords:["caffeine","คาเฟอีน"],
+    name:"Caffeine", maxActualMg:400, unit:"mg/วัน",
+    status:"approved",
+    ref:"อย. อนุมัติ — Caffeine ≤ 400 mg/วัน; ใน Supplement ≤ 200 mg/serving",
+    overNote:"เกิน 400 mg/วัน → ใจสั่น นอนไม่หลับ ความดันสูง; ระวังในหญิงตั้งครรภ์ (≤ 200 mg/วัน)" },
+
+  { keywords:["fenugreek","เมล็ดลูกซัด","trigonella foenum-graecum","fenugreek seed"],
+    name:"Fenugreek (Trigonella foenum-graecum)", maxActualMg:1000, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Trigonella foenum-graecum อนุมัติ",
+    overNote:"ลดน้ำตาลในเลือด — ระวังในผู้ป่วยเบาหวาน; ระวังในหญิงตั้งครรภ์" },
+
+  { keywords:["tribulus","tribulus terrestris","โทรีบูลัส"],
+    name:"Tribulus Terrestris", maxActualMg:750, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Tribulus terrestris อนุมัติ; ≤ 750 mg/วัน",
+    overNote:"ไม่มีหลักฐานพิสูจน์ว่าเพิ่ม Testosterone ได้จริง; ระวังมีผลต่อ PSA test" },
+
+  { keywords:["saw palmetto","ซอว์พาลเม็ตโต","serenoa repens","sabal"],
+    name:"Saw Palmetto (Serenoa repens)", maxActualMg:320, unit:"mg/วัน",
+    status:"approved",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Serenoa repens อนุมัติ; ≤ 320 mg/วัน",
+    overNote:"มีผลต่อยาต้านการแข็งตัวเลือด" },
+
+  // ── RESTRICTED ADAPTOGENS ──
+  { keywords:["maca","มาก้า","lepidium meyenii","lepidium peruvianum"],
+    name:"Maca (Lepidium meyenii)", maxActualMg:3000, unit:"mg/วัน",
+    status:"restricted",
+    ref:"อย. ไทย — Maca ต้องตรวจสอบสถานะ Novel Food/รายการอนุมัติ; บางรูปแบบต้องขออนุมัติพิเศษ",
+    overNote:"ตรวจสอบสถานะกับ อย. ก่อนผลิต; ระวังใน Hormone-sensitive conditions" },
+
+  { keywords:["5-htp","5 htp","5-hydroxytryptophan","hydroxytryptophan"],
+    name:"5-HTP (5-Hydroxytryptophan)", maxActualMg:0, unit:"—",
+    status:"restricted",
+    ref:"อย. ไทย: 5-HTP — สถานะไม่ชัดเจน; อาจต้องขึ้นทะเบียนยาในบางกรณี",
+    overNote:"ตรวจสอบกับ อย. ก่อนผลิต; ระวัง Serotonin Syndrome เมื่อใช้ร่วมกับยาต้านซึมเศร้า" },
+
+  { keywords:["valerian","วาเลอเรียน","valeriana officinalis"],
+    name:"Valerian (Valeriana officinalis)", maxActualMg:900, unit:"mg/วัน",
+    status:"restricted",
+    ref:"ประกาศ อย. รายการพืชอนุญาต 444 ชนิด — Valeriana อาจต้องขออนุมัติเฉพาะ",
+    overNote:"ตรวจสอบสถานะกับ อย.; ระวังในผู้ขับขี่ (ง่วงซึม); มีผลต่อ CYP3A4" },
+
+  // ══════════════════════════════════════════
+  // PROHIBITED (ADDITIONAL)
+  // ══════════════════════════════════════════
+
+  { keywords:["red yeast rice","ข้าวยีสต์แดง","monascus","monacolin k","red rice yeast"],
+    name:"Red Yeast Rice (Monascus purpureus)", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: Red Yeast Rice ที่มี Monacolin K = ยาควบคุม — ห้ามใน Supplement",
+    overNote:"Monacolin K = Lovastatin (ยาลดไขมัน) → ต้องขึ้นทะเบียนยา; มีผลต่อตับ" },
+
+  { keywords:["berberine","เบอร์เบอรีน","berberis"],
+    name:"Berberine", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: Berberine = ยาควบคุม — ห้ามในผลิตภัณฑ์เสริมอาหาร",
+    overNote:"ต้องขึ้นทะเบียนเป็นยา; มีผลต่อยาหลายชนิด (CYP3A4); ลดน้ำตาลในเลือดอย่างแรง" },
+
+  { keywords:["cbd","cannabidiol","กัญชา","cannabis","hemp extract","hemp oil"],
+    name:"CBD / Cannabis Extract", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: CBD ใน Supplement ยังไม่อนุมัติทั่วไป — ต้องขออนุญาตเฉพาะกรณี",
+    overNote:"สถานะกฎหมายเปลี่ยนแปลงบ่อย — ตรวจสอบกฎระเบียบปัจจุบันกับ อย. ก่อนผลิตทุกครั้ง" },
+
+  // ── PROHIBITED / ยาควบคุม ──
+  { keywords:["melatonin","เมลาโทนิน"],
+    name:"Melatonin", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"ประเทศไทย: Melatonin = ยาควบคุม (Controlled Drug) — ห้ามจำหน่ายเป็น Supplement",
+    overNote:"ต้องขึ้นทะเบียนเป็นยา สั่งจ่ายโดยแพทย์เท่านั้น" },
+
+  { keywords:["dhea","dehydroepiandrosterone"],
+    name:"DHEA", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: DHEA = ยาควบคุม — ห้ามจำหน่ายเป็น Supplement",
+    overNote:"ต้องขึ้นทะเบียนเป็นยา สั่งจ่ายโดยแพทย์" },
+
+  { keywords:["hgh","growth hormone","somatropin","โกรทฮอร์โมน"],
+    name:"HGH / Growth Hormone", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: Growth Hormone = ยาควบคุมพิเศษ — ห้ามเด็ดขาด",
+    overNote:"วัตถุออกฤทธิ์ต่อจิตและประสาท; ต้องขึ้นทะเบียนยา" },
+
+  { keywords:["ephedrine","อีเฟดรีน","ma huang"],
+    name:"Ephedrine", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: Ephedrine = วัตถุออกฤทธิ์ประเภท 3 — ห้ามใน Supplement",
+    overNote:"ต้องขึ้นทะเบียนยาควบคุม" },
+
+  { keywords:["sibutramine","ไซบูทรามีน"],
+    name:"Sibutramine", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: Sibutramine = วัตถุออกฤทธิ์ต่อจิตประสาท — ผิดกฎหมายอย่างเด็ดขาด",
+    overNote:"การปนเปื้อนใน Supplement มีโทษทางอาญา" },
+
+  { keywords:["anabolic","testosterone","stanozolol","androgen","สเตียรอยด์ anabolic"],
+    name:"Anabolic Steroids", maxActualMg:0, unit:"—",
+    status:"not_approved",
+    ref:"อย. ไทย: Anabolic Steroids = ยาควบคุมพิเศษ/วัตถุต้องห้าม",
+    overNote:"ห้ามเด็ดขาดในผลิตภัณฑ์เสริมอาหาร — โทษทางอาญา" },
+];
+
+// ─── CHECK FUNCTION ───
+function checkFDA(ingredientName, actualMg) {
+  const name = ingredientName.toLowerCase();
+  const match = THAI_FDA_DB.find(entry =>
+    entry.keywords.some(kw => name.includes(kw.toLowerCase()))
+  );
+  if (!match) return { status: "unknown", icon: "⚪", cls: "fda-unknown", tip: `"${ingredientName}" ไม่พบในฐานข้อมูล อย. ไทย — ตรวจสอบเพิ่มเติมกับ อย. ก่อนขึ้นทะเบียน` };
+  if (match.status === "not_approved") {
+    return { status: "not_approved", icon: "🔴", cls: "fda-danger",
+      tip: `🔴 ไม่อนุมัติ: ${match.name}\n${match.ref}\n⚠️ ${match.overNote}` };
+  }
+  if (actualMg > match.maxActualMg) {
+    return { status: "over", icon: "🟡", cls: "fda-warn",
+      tip: `🟡 เกินขีดจำกัด: ${match.name}\nใช้จริง: ${actualMg.toFixed(2)} mg | ขีดจำกัด: ${match.maxActualMg} ${match.unit}\n${match.ref}\n⚠️ ${match.overNote}` };
+  }
+  return { status: "ok", icon: "🟢", cls: "fda-ok",
+    tip: `🟢 อนุมัติ: ${match.name}\nใช้จริง: ${actualMg.toFixed(2)} mg | ขีดจำกัด: ${match.maxActualMg} ${match.unit}\n${match.ref}` };
+}
+
+// ========== STATE ==========
+let rows = [];
+let selectedConcepts = [];
+let rowId = 0;
+
+// ========== INGREDIENT DB ==========
+const IDB = {
+  "Vitamin C (Ascorbic Acid)": {p:99, o:"Synthetic / DSM", note:""},
+  "Sodium Ascorbate": {p:99, o:"Synthetic / BASF", note:"Buffered – ไม่ระคาย"},
+  "Calcium Ascorbate": {p:99, o:"Synthetic", note:"Buffered"},
+  "Collagen Peptide (Marine)": {p:90, o:"Marine / GELITA", note:""},
+  "Collagen Peptide (Bovine)": {p:90, o:"Bovine / Rousselot", note:""},
+  "Glutathione (Reduced)": {p:98, o:"Yeast / Kyowa Hakko", note:""},
+  "Zinc Gluconate": {p:14.3, o:"Synthetic", note:"Elemental Zn 14.3%"},
+  "Zinc Sulfate": {p:22.7, o:"Synthetic", note:"Elemental Zn 22.7%"},
+  "Zinc Bisglycinate": {p:20, o:"Synthetic / Albion", note:"Chelated – ดูดซึมดี"},
+  "Niacinamide (Vit B3)": {p:99.5, o:"Synthetic / Lonza", note:""},
+  "Vitamin E (d-alpha Tocopherol)": {p:67, o:"Natural / DSM", note:"1 IU = 0.67 mg"},
+  "Vitamin D3 (Cholecalciferol)": {p:0.1, o:"Lanolin / DSM", note:"1,000 IU/g"},
+  "Beta-Carotene": {p:10, o:"Synthetic / DSM", note:"Provitamin A"},
+  "Spirulina Powder": {p:60, o:"Arthrospira / Earthrise", note:"Protein 60%"},
+  "Chlorophyll": {p:3, o:"Mulberry leaf / Thailand", note:"Chlorophyllin 3%"},
+  "Milk Thistle Extract": {p:80, o:"Silybum marianum", note:"Silymarin 80%"},
+  "Green Tea Extract": {p:98, o:"Camellia sinensis", note:"EGCG 50%"},
+  "Elderberry Extract": {p:10, o:"Sambucus nigra", note:"Anthocyanin 10%"},
+  "Biotin (Vit B7)": {p:99, o:"Synthetic / DSM", note:""},
+  "Folic Acid": {p:99, o:"Synthetic / DSM", note:""},
+  "Magnesium Stearate": {p:99, o:"Synthetic", note:"Lubricant"},
+  "Microcrystalline Cellulose": {p:99, o:"Cellulose", note:"Excipient"},
+  "Silicon Dioxide": {p:99, o:"Synthetic", note:"Anti-caking"},
+  "Hypromellose (HPMC)": {p:99, o:"Cellulose", note:"Coating"},
+};
+
+const TEMPLATES = {
+  whitening: [
+    {name:"Vitamin C (Ascorbic Acid)", w:500, o:"Synthetic / DSM", p:99, note:"Main active", hero:true},
+    {name:"Glutathione (Reduced)", w:250, o:"Yeast / Kyowa Hakko", p:98, note:"ผิวขาว", hero:true},
+    {name:"Collagen Peptide (Marine)", w:200, o:"Marine / GELITA", p:90, note:"บำรุงผิว", hero:false},
+    {name:"Vitamin E (d-alpha Tocopherol)", w:30, o:"Natural / DSM", p:67, note:"", hero:false},
+    {name:"Beta-Carotene", w:10, o:"Synthetic / DSM", p:10, note:"", hero:false},
+    {name:"Microcrystalline Cellulose", w:150, o:"Cellulose", p:99, note:"Excipient", hero:false},
+    {name:"Magnesium Stearate", w:10, o:"Synthetic", p:99, note:"Lubricant", hero:false},
+  ],
+  acne: [
+    {name:"Zinc Gluconate", w:350, o:"Synthetic", p:14.3, note:"50 mg elemental Zn", hero:true},
+    {name:"Niacinamide (Vit B3)", w:500, o:"Synthetic / Lonza", p:99.5, note:"ลดรอยดำ", hero:true},
+    {name:"Vitamin C (Ascorbic Acid)", w:200, o:"Synthetic / DSM", p:99, note:"", hero:false},
+    {name:"Vitamin E (d-alpha Tocopherol)", w:22, o:"Natural / DSM", p:67, note:"", hero:false},
+    {name:"Green Tea Extract", w:100, o:"Camellia sinensis", p:98, note:"EGCG", hero:false},
+    {name:"Microcrystalline Cellulose", w:200, o:"Cellulose", p:99, note:"Excipient", hero:false},
+    {name:"Silicon Dioxide", w:5, o:"Synthetic", p:99, note:"Anti-caking", hero:false},
+    {name:"Magnesium Stearate", w:10, o:"Synthetic", p:99, note:"Lubricant", hero:false},
+  ],
+  detox: [
+    {name:"Chlorophyll", w:500, o:"Mulberry leaf / Thailand", p:3, note:"", hero:true},
+    {name:"Spirulina Powder", w:400, o:"Arthrospira / Earthrise", p:60, note:"Protein 60%", hero:true},
+    {name:"Milk Thistle Extract", w:200, o:"Silybum marianum", p:80, note:"Silymarin", hero:true},
+    {name:"Vitamin C (Ascorbic Acid)", w:100, o:"Synthetic / DSM", p:99, note:"", hero:false},
+    {name:"Zinc Gluconate", w:140, o:"Synthetic", p:14.3, note:"", hero:false},
+    {name:"Microcrystalline Cellulose", w:140, o:"Cellulose", p:99, note:"Excipient", hero:false},
+    {name:"Magnesium Stearate", w:10, o:"Synthetic", p:99, note:"Lubricant", hero:false},
+  ],
+  immune: [
+    {name:"Vitamin C (Ascorbic Acid)", w:1000, o:"Synthetic / DSM", p:99, note:"Main active", hero:true},
+    {name:"Zinc Bisglycinate", w:250, o:"Synthetic / Albion", p:20, note:"50 mg elemental Zn", hero:true},
+    {name:"Vitamin D3 (Cholecalciferol)", w:100, o:"Lanolin / DSM", p:0.1, note:"1,000 IU", hero:false},
+    {name:"Elderberry Extract", w:200, o:"Sambucus nigra", p:10, note:"Anthocyanin", hero:false},
+    {name:"Microcrystalline Cellulose", w:320, o:"Cellulose", p:99, note:"Excipient", hero:false},
+    {name:"Silicon Dioxide", w:5, o:"Synthetic", p:99, note:"", hero:false},
+    {name:"Magnesium Stearate", w:15, o:"Synthetic", p:99, note:"Lubricant", hero:false},
+  ],
+  antiaging: [
+    {name:"Collagen Peptide (Marine)", w:500, o:"Marine / GELITA", p:90, note:"", hero:true},
+    {name:"Vitamin C (Ascorbic Acid)", w:300, o:"Synthetic / DSM", p:99, note:"Co-factor collagen", hero:true},
+    {name:"Glutathione (Reduced)", w:150, o:"Yeast / Kyowa Hakko", p:98, note:"", hero:false},
+    {name:"Vitamin E (d-alpha Tocopherol)", w:22, o:"Natural / DSM", p:67, note:"", hero:false},
+    {name:"Biotin (Vit B7)", w:50, o:"Synthetic / DSM", p:99, note:"", hero:false},
+    {name:"Hypromellose (HPMC)", w:20, o:"Cellulose", p:99, note:"Coating", hero:false},
+    {name:"Microcrystalline Cellulose", w:200, o:"Cellulose", p:99, note:"Excipient", hero:false},
+    {name:"Magnesium Stearate", w:10, o:"Synthetic", p:99, note:"Lubricant", hero:false},
+  ],
+};
+
+// ========== CONCEPT KNOWLEDGE BASE ==========
+const CONCEPT_KB = {
+  "ผิวขาว / Whitening": {
+    benefits:["ช่วยลดการสร้างเม็ดสีเมลานิน ทำให้ผิวกระจ่างใส","เสริมการสร้างคอลลาเจน ผิวอ่อนเยาว์","ต้านอนุมูลอิสระ ชะลอผิวหมองคล้ำ","ฟื้นฟูผิวเสียจากแสงแดด UV"],
+    sp:["✨ ผิวขาว กระจ่างใส เห็นผลใน 4-8 สัปดาห์","🌿 สูตร Double Brightening: Vit-C + Glutathione","💧 บำรุงผิวชั้นลึก ลดรอยดำ","🌸 เหมาะสำหรับ Beauty from Within"],
+    target:"ผู้หญิงอายุ 20–40 ปี ที่ต้องการผิวขาวกระจ่างใส",
+  },
+  "ลดสิว / Anti-Acne": {
+    benefits:["ยับยั้งการอักเสบของสิว ลดความรุนแรง","ลดการผลิตน้ำมันส่วนเกิน (Sebum Control)","ลดรอยดำจากสิว (Post-Acne Mark)","เสริมระบบต้านแบคทีเรีย S. aureus"],
+    sp:["🧴 สูตร Anti-Acne: Zinc + Niacinamide","🌿 ลดการอักเสบจากภายใน","✨ ลดรอยดำ รอยแดงหลังสิว","💊 ปลอดภัย ไม่ใช่ยา"],
+    target:"วัยรุ่น-ผู้ใหญ่ อายุ 15–35 ปี ที่มีปัญหาสิว",
+  },
+  "Detox / ล้างพิษ": {
+    benefits:["ช่วยฟื้นฟูการทำงานของตับ","กำจัดสารพิษและของเสียในร่างกาย","เสริมการทำงานของระบบย่อยอาหาร","ต้านอนุมูลอิสระจากสิ่งแวดล้อม"],
+    sp:["🌿 สูตร Plant-Based Detox","🍃 Chlorophyll + Spirulina คู่ซุปเปอร์ฟู้ด","💚 บำรุงตับ ล้างพิษเป็นธรรมชาติ","🌱 ไม่มีสารเคมีสังเคราะห์"],
+    target:"คนทำงาน อายุ 25–50 ปี ที่ต้องการฟื้นฟูร่างกาย",
+  },
+  "เสริมภูมิคุ้มกัน / Immune Boost": {
+    benefits:["เพิ่มประสิทธิภาพระบบภูมิคุ้มกัน","ลดความเสี่ยงและความรุนแรงของไข้หวัด","สนับสนุนการสร้าง White Blood Cells","เสริม Antioxidant protection"],
+    sp:["💊 High-Dose Vit-C 1,000 mg","🛡 Triple Shield: C + Zinc + D3","⚡ เริ่มเห็นผลภายใน 2 สัปดาห์","🌿 สูตรเสริมภูมิ ทานได้ทุกวัน"],
+    target:"ทุกเพศทุกวัย อายุ 15–65 ปี โดยเฉพาะผู้ที่ต้องการดูแลสุขภาพเชิงป้องกัน",
+  },
+  "ชะลอวัย / Anti-Aging": {
+    benefits:["เพิ่มความยืดหยุ่นของผิว ลดริ้วรอย","บำรุงผิวจากภายใน เพิ่ม Skin Hydration","กระตุ้นการสร้าง Collagen Type I & III","ต้านอนุมูลอิสระจาก Oxidative Stress"],
+    sp:["⏳ Marine Collagen 500mg สูตรเข้มข้น","✨ Collagen + Vit-C สูตร Synergy","🌸 เห็นผลภายใน 8–12 สัปดาห์","💧 ผิวอิ่มน้ำ ดูอ่อนเยาว์"],
+    target:"ผู้หญิง-ผู้ชาย อายุ 30–55 ปี ที่ต้องการชะลอความแก่ชรา",
+  },
+};
+
+// ========== NAVIGATION ==========
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('on'));
+  document.querySelectorAll('.ntab').forEach(el=>el.classList.remove('on'));
+  document.getElementById(v==='input'?'inputView':'dashView').classList.add('on');
+  document.querySelectorAll('.ntab')[v==='input'?0:1].classList.add('on');
+}
+
+// ========== CONCEPT TOGGLE ==========
+function toggleConcept(btn, val) {
+  btn.classList.toggle('on');
+  if(btn.classList.contains('on')) {
+    if(!selectedConcepts.includes(val)) selectedConcepts.push(val);
+  } else {
+    selectedConcepts = selectedConcepts.filter(c=>c!==val);
+  }
+}
+
+// ========== TAGS ==========
+function addTag(e, containerId, inputId) {
+  if(e.key!=='Enter' && e.key!==',') return;
+  e.preventDefault();
+  const inp = document.getElementById(inputId);
+  const val = inp.value.trim();
+  if(!val) return;
+  const container = document.getElementById(containerId);
+  const tag = document.createElement('span');
+  tag.className='tag';
+  tag.innerHTML=`${val}<button class="tag-x" onclick="this.parentElement.remove()">×</button>`;
+  container.insertBefore(tag, inp);
+  inp.value='';
+}
+function getTagValues(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} .tag`)).map(t=>t.textContent.trim().replace('×','').trim());
+}
+
+// ========== INGREDIENT TABLE ==========
+function addRow(data={}) {
+  rowId++;
+  const id = rowId;
+  const tr = document.createElement('tr');
+  tr.id=`row_${id}`;
+  tr.innerHTML=`
+    <td style="color:var(--muted);font-size:11px;text-align:center">${document.querySelectorAll('#ingBody tr').length+1}</td>
+    <td style="text-align:center"><span class="hero-star${data.hero?' on':''}" onclick="toggleHero(this)" title="Hero Ingredient">⭐</span></td>
+    <td><input list="ing_list" value="${data.name||''}" placeholder="ชื่อสาร..." oninput="onIngChange(this,${id})" style="min-width:180px"></td>
+    <td><input type="number" value="${data.w||''}" placeholder="0" oninput="calcRow(${id})" style="min-width:100px"></td>
+    <td><input value="${data.o||''}" placeholder="Origin..." style="min-width:140px"></td>
+    <td><input type="number" value="${data.p||''}" placeholder="100" step="0.01" oninput="calcRow(${id})" style="min-width:90px"></td>
+    <td class="calc" id="actual_${id}">—</td>
+    <td class="fda-cell" id="fda_${id}"><span class="fda-unknown">⚪</span><div class="fda-tip">ยังไม่มีข้อมูล</div></td>
+    <td><input value="${data.note||''}" placeholder="หมายเหตุ..." style="min-width:120px"></td>
+    <td><button class="btn-del" onclick="delRow(${id})">🗑</button></td>
+  `;
+  document.getElementById('ingBody').appendChild(tr);
+  if(data.w && data.p) calcRow(id);
+  renumberRows();
+  return id;
+}
+
+function onIngChange(inp, id) {
+  const name = inp.value;
+  if(IDB[name]) {
+    const row = document.getElementById(`row_${id}`);
+    const inputs = row.querySelectorAll('input');
+    if(!inputs[3].value) inputs[3].value = IDB[name].o;
+    if(!inputs[4].value) inputs[4].value = IDB[name].p;
+    if(!inputs[5].value && IDB[name].note) inputs[5].value = IDB[name].note;
+  }
+  calcRow(id);
+  // Also run FDA check even without purity (unknown amount)
+  const fdaCell = document.getElementById(`fda_${id}`);
+  if(fdaCell && name.trim()) {
+    const result = checkFDA(name.trim(), 0);
+    if(result.status === 'not_approved') {
+      fdaCell.innerHTML = `<span class="${result.cls}">${result.icon}</span><div class="fda-tip">${result.tip.replace(/\n/g,'<br>')}</div>`;
+    }
+  }
+}
+
+function calcRow(id) {
+  const row = document.getElementById(`row_${id}`);
+  if(!row) return;
+  const inputs = row.querySelectorAll('input[type=number]');
+  const w = parseFloat(inputs[0].value)||0;
+  const p = parseFloat(inputs[1].value)||0;
+  const actual = w * p / 100;
+  const cell = document.getElementById(`actual_${id}`);
+  if(cell) cell.textContent = w>0 ? actual.toFixed(2)+' mg' : '—';
+  // FDA check
+  const nameInput = row.querySelector('input[list="ing_list"]');
+  const fdaCell = document.getElementById(`fda_${id}`);
+  if(fdaCell && nameInput && nameInput.value.trim()) {
+    const result = checkFDA(nameInput.value.trim(), actual);
+    fdaCell.innerHTML = `<span class="${result.cls}" title="">${result.icon}</span><div class="fda-tip">${result.tip.replace(/\n/g,'<br>')}</div>`;
+  }
+  updateTotals();
+}
+
+function updateTotals() {
+  let totW=0, totA=0;
+  document.querySelectorAll('#ingBody tr').forEach(tr=>{
+    const rid = tr.id.replace('row_','');
+    const inputs = tr.querySelectorAll('input[type=number]');
+    const w = parseFloat(inputs[0]?.value)||0;
+    const p = parseFloat(inputs[1]?.value)||0;
+    totW += w; totA += w*p/100;
+  });
+  document.getElementById('totWeight').textContent = totW.toFixed(2)+' mg';
+  document.getElementById('totActual').textContent = totA.toFixed(2)+' mg';
+}
+
+function delRow(id) {
+  document.getElementById(`row_${id}`)?.remove();
+  updateTotals(); renumberRows();
+}
+
+function renumberRows() {
+  document.querySelectorAll('#ingBody tr').forEach((tr,i)=>{
+    tr.querySelector('td:first-child').textContent = i+1;
+  });
+}
+
+function toggleHero(el) { el.classList.toggle('on'); }
+
+function loadTemplate(key) {
+  document.getElementById('ingBody').innerHTML='';
+  rows=[];
+  TEMPLATES[key].forEach(d=>addRow(d));
+}
+
+// ========== GET ROW DATA ==========
+function getRows() {
+  const result=[];
+  document.querySelectorAll('#ingBody tr').forEach((tr,i)=>{
+    const inputs = tr.querySelectorAll('input');
+    const numInputs = tr.querySelectorAll('input[type=number]');
+    const name = inputs[0]?.value?.trim();
+    if(!name) return;
+    const w = parseFloat(numInputs[0]?.value)||0;
+    const p = parseFloat(numInputs[1]?.value)||100;
+    const actual = w*p/100;
+    const isHero = tr.querySelector('.hero-star')?.classList.contains('on');
+    const fda = checkFDA(name, actual);
+    result.push({num:i+1, name, w, o:inputs[2]?.value||'—', p, actual, note:inputs[4]?.value||'', hero:isHero, fda});
+  });
+  return result;
+}
+
+// ========== GENERATE DASHBOARD ==========
+function generateDash() {
+  const customer = document.getElementById('f_customer').value.trim();
+  const brand = document.getElementById('f_brand').value.trim();
+  const rows = getRows();
+
+  if(!brand && !customer) {
+    document.getElementById('gen_err').textContent='กรุณากรอกชื่อลูกค้าหรือแบรนด์';
+    return;
+  }
+  document.getElementById('gen_err').textContent='';
+
+  const form = document.getElementById('f_form').value;
+  const size = document.getElementById('f_size').value;
+  const uw = document.getElementById('f_unit_weight').value;
+  const conceptCustom = document.getElementById('f_concept_custom').value.trim();
+  const target = document.getElementById('f_target').value.trim();
+  const gender = document.getElementById('f_gender').value;
+  const price = document.getElementById('f_price').value;
+  const notes = document.getElementById('f_notes').value.trim();
+  const claims = getTagValues('tc_claims');
+  const cons = getTagValues('tc_cons');
+
+  const allConcepts = [...selectedConcepts];
+  if(conceptCustom) allConcepts.push(conceptCustom);
+  const conceptStr = allConcepts.join(' + ') || 'Health Supplement';
+
+  // Gather knowledge from concept KB
+  let allBenefits=[], allSP=[], suggestedTarget='';
+  allConcepts.forEach(c=>{
+    const kb = CONCEPT_KB[c];
+    if(kb){
+      allBenefits.push(...kb.benefits);
+      allSP.push(...kb.sp);
+      if(!suggestedTarget) suggestedTarget = kb.target;
+    }
+  });
+
+  // Add custom claims
+  claims.forEach(c=>{if(!allBenefits.includes(c)) allBenefits.push(c);});
+  if(allBenefits.length===0) allBenefits=['เสริมสุขภาพโดยรวม','ต้านอนุมูลอิสระ','บำรุงร่างกาย'];
+  if(allSP.length===0) allSP=['💊 สูตร Premium Grade','🌿 คัดสรรวัตถุดิบคุณภาพ','✅ ผ่านมาตรฐาน GMP'];
+
+  const finalTarget = target || suggestedTarget || 'ผู้ใหญ่ทุกเพศ อายุ 18 ปีขึ้นไป';
+  const heroes = rows.filter(r=>r.hero);
+
+  // -------- Render --------
+  document.getElementById('d_title').textContent = brand ? `${brand}` : customer;
+  document.getElementById('d_sub').textContent = customer ? `ลูกค้า: ${customer}` : '';
+  document.getElementById('d_meta').innerHTML = [
+    form ? `<span><b>รูปแบบ:</b> ${form}</span>` : '',
+    size ? `<span><b>บรรจุ:</b> ${size}</span>` : '',
+    uw ? `<span><b>น้ำหนัก/หน่วย:</b> ${uw} mg</span>` : '',
+    `<span><b>สร้างวันที่:</b> ${new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'})}</span>`,
+  ].filter(Boolean).join('');
+
+  document.getElementById('d_concept_main').textContent = conceptStr;
+  document.getElementById('d_concept_desc').textContent = allConcepts.length>0
+    ? `สินค้า ${form||'supplement'} คอนเซป "${conceptStr}" เน้น ${allBenefits[0]||'บำรุงสุขภาพ'}`
+    : 'สูตรบำรุงสุขภาพโดยรวม';
+
+  // Formula table
+  const fb = document.getElementById('d_formula_body');
+  fb.innerHTML='';
+  let totW=0,totA=0;
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    if(r.hero) tr.className='hero-row';
+    const fdaStatusHTML = `<div class="fda-cell" style="text-align:center"><span class="${r.fda.cls}">${r.fda.icon}</span><div class="fda-tip">${r.fda.tip.replace(/\n/g,'<br>')}</div></div>`;
+    tr.innerHTML=`
+      <td style="color:var(--muted);text-align:center">${r.num}</td>
+      <td><b>${r.name}</b>${r.hero?'<span class="hero-badge">HERO</span>':''}</td>
+      <td>${r.w.toFixed(2)} mg</td>
+      <td>${r.o}</td>
+      <td>${r.p}%</td>
+      <td class="actual">${r.actual.toFixed(2)} mg</td>
+      <td>${fdaStatusHTML}</td>
+      <td style="color:var(--muted);font-size:12px">${r.note}</td>
+    `;
+    fb.appendChild(tr);
+    totW+=r.w; totA+=r.actual;
+  });
+  if(rows.length===0){
+    fb.innerHTML=`<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">ไม่มีข้อมูลสาร</td></tr>`;
+  }
+  document.getElementById('d_tot_w').textContent=totW.toFixed(2)+' mg';
+  document.getElementById('d_tot_a').textContent=totA.toFixed(2)+' mg';
+
+  // Benefits
+  document.getElementById('d_benefits').innerHTML = allBenefits.slice(0,6).map(b=>`
+    <div class="bitem"><span>✅</span><span>${b}</span></div>
+  `).join('');
+
+  // Heroes
+  const heroList = heroes.length>0 ? heroes : rows.slice(0,3);
+  document.getElementById('d_heroes').innerHTML = heroList.map(r=>`
+    <div class="chip">
+      <div class="chip-n">${r.name}</div>
+      <div class="chip-v">${r.actual.toFixed(2)} mg actual</div>
+    </div>
+  `).join('') || '<span style="color:var(--muted);font-size:13px">ไม่ได้ระบุ Hero Ingredient</span>';
+
+  // Selling points
+  document.getElementById('d_selling').innerHTML = allSP.slice(0,6).map(s=>`
+    <div class="sp"><span style="font-size:16px">${s.split(' ')[0]}</span><span>${s.substring(s.indexOf(' ')+1)}</span></div>
+  `).join('');
+
+  // Target
+  const tgtParts = [
+    {lbl:'กลุ่มเป้าหมาย', val: finalTarget},
+    gender ? {lbl:'เพศ', val: gender} : null,
+    price ? {lbl:'ราคา/หน่วย', val: `~${price} บาท`} : null,
+    form ? {lbl:'รูปแบบ', val: form} : null,
+  ].filter(Boolean);
+  document.getElementById('d_target').innerHTML = tgtParts.map(p=>`
+    <div class="tgt-c"><div class="tgt-lbl">${p.lbl}</div><div class="tgt-val">${p.val}</div></div>
+  `).join('');
+
+  // Constraints
+  const allCons = cons.length>0 ? cons : (conceptStr.includes('ลดน้ำหนัก')?['ไม่มีน้ำตาล']:['ไม่มีข้อจำกัดพิเศษ']);
+  document.getElementById('d_cons').innerHTML = allCons.map(c=>`<span class="con-tag">${c}</span>`).join('');
+
+  // Notes
+  const nw = document.getElementById('d_notes_wrap');
+  const nd = document.getElementById('d_notes');
+  if(notes){nw.style.display='block'; nd.textContent=notes;}
+  else{nw.style.display='none';}
+
+  document.getElementById('d_date').textContent = new Date().toLocaleString('th-TH');
+
+  // ─── FDA COMPLIANCE PANEL ───
+  const notApproved = rows.filter(r=>r.fda.status==='not_approved');
+  const overLimit   = rows.filter(r=>r.fda.status==='over');
+  const unknown     = rows.filter(r=>r.fda.status==='unknown');
+  const allOk       = rows.filter(r=>r.fda.status==='ok');
+  const fdaPanel    = document.getElementById('d_fda_panel');
+
+  let panelHTML = '';
+
+  // Danger — not approved
+  if(notApproved.length>0){
+    panelHTML += `<div class="fda-panel fda-panel-danger">
+      <div class="dbc-t" style="color:#F85149;margin-bottom:10px">🔴 ไม่ผ่าน อย. — ต้องขึ้นทะเบียนเป็นยา (${notApproved.length} รายการ)</div>
+      ${notApproved.map(r=>`<div class="fda-row">
+        <div class="fda-row-icon">🔴</div>
+        <div class="fda-row-body">
+          <div class="fda-row-name">${r.name} (${r.actual.toFixed(2)} mg actual)</div>
+          <div class="fda-row-detail">${r.fda.tip.split('\n')[1]||''}</div>
+          <div class="fda-row-limit" style="color:#F85149">⚠️ ${r.fda.tip.split('\n')[2]||''}</div>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  // Warning — over limit
+  if(overLimit.length>0){
+    panelHTML += `<div class="fda-panel fda-panel-warn">
+      <div class="dbc-t" style="color:#D29922;margin-bottom:10px">🟡 เกินขีดจำกัด อย. — ต้องปรับลดปริมาณ (${overLimit.length} รายการ)</div>
+      ${overLimit.map(r=>{
+        const lines = r.fda.tip.split('\n');
+        return `<div class="fda-row">
+          <div class="fda-row-icon">🟡</div>
+          <div class="fda-row-body">
+            <div class="fda-row-name">${r.name}</div>
+            <div class="fda-row-detail">${lines[1]||''}</div>
+            <div class="fda-row-limit" style="color:#D29922">${lines[2]||''}</div>
+            <div class="fda-row-detail" style="margin-top:3px;color:#F85149">${lines[3]||''}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // Unknown
+  if(unknown.length>0){
+    panelHTML += `<div class="fda-panel" style="background:rgba(139,148,158,.07);border-color:rgba(139,148,158,.3)">
+      <div class="dbc-t" style="color:#8B949E;margin-bottom:10px">⚪ ไม่พบในฐานข้อมูล อย. — ตรวจสอบเพิ่มเติม (${unknown.length} รายการ)</div>
+      ${unknown.map(r=>`<div class="fda-row">
+        <div class="fda-row-icon">⚪</div>
+        <div class="fda-row-body">
+          <div class="fda-row-name">${r.name} (${r.actual.toFixed(2)} mg actual)</div>
+          <div class="fda-row-detail">ไม่พบในฐานข้อมูล อย. — กรุณาตรวจสอบกับ อย. ก่อนขึ้นทะเบียนผลิตภัณฑ์</div>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  // All clear
+  if(notApproved.length===0 && overLimit.length===0 && rows.length>0){
+    panelHTML = `<div class="fda-panel fda-panel-ok">
+      <div class="dbc-t" style="color:#3FB950;margin-bottom:6px">🟢 ผ่านการตรวจสอบ อย. ทุกรายการ (${allOk.length} รายการ${unknown.length>0?` | ⚪ ไม่พบในฐานข้อมูล ${unknown.length} รายการ`:''})
+      </div>
+      <div style="font-size:12px;color:#8B949E">ส่วนผสมทั้งหมดที่ตรวจสอบได้อยู่ในขีดจำกัดที่ อย. กำหนดสำหรับผลิตภัณฑ์เสริมอาหาร${unknown.length>0?' — ยังมีรายการที่ไม่พบในฐานข้อมูล กรุณายืนยันกับ อย. ก่อนขึ้นทะเบียน':''}</div>
+    </div>`;
+  }
+
+  fdaPanel.innerHTML = panelHTML;
+
+  document.getElementById('dashEmpty').style.display='none';
+  document.getElementById('dashContent').style.display='block';
+  switchView('dash');
+}
+
+// ========== EXPORT CSV ==========
+function exportCSV() {
+  const rows = getRows();
+  let csv = 'ชื่อสาร,ปริมาณที่ชั่ง (mg),Origin,ความเข้มข้น (%),สารที่ได้จริง (mg),Hero,หมายเหตุ\n';
+  rows.forEach(r=>{
+    csv+=`"${r.name}",${r.w},"${r.o}",${r.p},${r.actual.toFixed(2)},${r.hero?'Yes':'No'},"${r.note}"\n`;
+  });
+  const brand=document.getElementById('f_brand').value||'formula';
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`${brand}_formula_${Date.now()}.csv`; a.click();
+}
+
+// ========== TEMPLATE DOWNLOAD ==========
+function downloadTemplate() {
+  const csv = [
+    'field,value',
+    'customer_name,บริษัท ตัวอย่าง จำกัด',
+    'brand_name,BRAND X',
+    'concept,ผิวขาว / Whitening',
+    'form,แคปซูล',
+    'size,30 เม็ด',
+    'unit_weight_mg,1000',
+    'target_group,ผู้หญิง 25-40 ปี',
+    'gender,หญิง',
+    'price_per_unit,25',
+    'constraints,ไม่มีน้ำตาล,ไม่มีกลูเตน',
+    'claims,ผิวขาว,เสริมภูมิคุ้มกัน',
+    'notes,สูตรพรีเมียม ไม่ใช้ Trademark',
+    '---ingredients---,---,---,---,---',
+    'ingredient_name,weight_mg,origin,purity_pct,note',
+    'Vitamin C (Ascorbic Acid),500,Synthetic / DSM,99,Main active',
+    'Glutathione (Reduced),250,Yeast / Kyowa Hakko,98,ผิวขาว',
+  ].join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='formula_brief_template.csv'; a.click();
+}
+
+// ========== FILE UPLOAD ==========
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropzone').classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if(file) handleFile(file);
+}
+
+function handleFile(file) {
+  if(!file || !file.name.endsWith('.csv')) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result.replace(/^﻿/,''); // strip BOM
+    parseCSV(text);
+    document.getElementById('fileAlert').style.display='flex';
+    setTimeout(()=>document.getElementById('fileAlert').style.display='none',4000);
+  };
+  reader.readAsText(file,'UTF-8');
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+  let inIngredients = false;
+  document.getElementById('ingBody').innerHTML='';
+  lines.forEach(line=>{
+    if(line.startsWith('---ingredients---')) { inIngredients=true; return; }
+    if(line.startsWith('ingredient_name')) return;
+    if(inIngredients) {
+      const [name,w,o,p,note] = line.split(',').map(x=>x?.replace(/^"|"$/g,'').trim());
+      if(name && name!=='ingredient_name') addRow({name,w:parseFloat(w)||0,o:o||'',p:parseFloat(p)||100,note:note||''});
+    } else {
+      const [field,...rest] = line.split(',');
+      const val = rest.join(',').replace(/^"|"$/g,'').trim();
+      const fld = field.replace(/^"|"$/g,'').trim();
+      if(fld==='customer_name') document.getElementById('f_customer').value=val;
+      else if(fld==='brand_name') document.getElementById('f_brand').value=val;
+      else if(fld==='form') document.getElementById('f_form').value=val;
+      else if(fld==='size') document.getElementById('f_size').value=val;
+      else if(fld==='unit_weight_mg') document.getElementById('f_unit_weight').value=val;
+      else if(fld==='target_group') document.getElementById('f_target').value=val;
+      else if(fld==='gender') document.getElementById('f_gender').value=val;
+      else if(fld==='price_per_unit') document.getElementById('f_price').value=val;
+      else if(fld==='notes') document.getElementById('f_notes').value=val;
+      else if(fld==='concept') {
+        document.querySelectorAll('#conceptGroup .tgb').forEach(btn=>{
+          if(val.includes(btn.textContent.trim())){btn.classList.add('on');if(!selectedConcepts.includes(val))selectedConcepts.push(val);}
+        });
+        document.getElementById('f_concept_custom').value=val;
+      }
+      else if(fld==='constraints') {
+        rest.join(',').split(',').forEach(v=>{
+          v=v.replace(/^"|"$/g,'').trim();
+          if(v){ const tc=document.getElementById('tc_cons'),ti=document.getElementById('ti_cons');
+            const tag=document.createElement('span');tag.className='tag';
+            tag.innerHTML=`${v}<button class="tag-x" onclick="this.parentElement.remove()">×</button>`;
+            tc.insertBefore(tag,ti);}
+        });
+      }
+      else if(fld==='claims') {
+        rest.join(',').split(',').forEach(v=>{
+          v=v.replace(/^"|"$/g,'').trim();
+          if(v){ const tc=document.getElementById('tc_claims'),ti=document.getElementById('ti_claims');
+            const tag=document.createElement('span');tag.className='tag';
+            tag.innerHTML=`${v}<button class="tag-x" onclick="this.parentElement.remove()">×</button>`;
+            tc.insertBefore(tag,ti);}
+        });
+      }
+    }
+  });
+  updateTotals();
+}
+
+// ========== RESET ==========
+function resetForm() {
+  if(!confirm('ล้างข้อมูลทั้งหมด?')) return;
+  ['f_customer','f_brand','f_concept_custom','f_size','f_unit_weight','f_target','f_price','f_notes'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('f_form').selectedIndex=0;
+  document.getElementById('f_gender').selectedIndex=0;
+  document.getElementById('ingBody').innerHTML='';
+  document.getElementById('tc_claims').innerHTML='<input class="ti" id="ti_claims" placeholder="พิมพ์แล้วกด Enter..." onkeydown="addTag(event,\'tc_claims\',\'ti_claims\')">';
+  document.getElementById('tc_cons').innerHTML='<input class="ti" id="ti_cons" placeholder="เช่น ไม่มีน้ำตาล, ไม่มีกลูเตน, ราคาถูก..." onkeydown="addTag(event,\'tc_cons\',\'ti_cons\')">';
+  document.querySelectorAll('#conceptGroup .tgb').forEach(b=>b.classList.remove('on'));
+  selectedConcepts=[];
+  updateTotals();
+}
+
+// Datalist for ingredient autocomplete
+const dl=document.createElement('datalist'); dl.id='ing_list';
+Object.keys(IDB).forEach(k=>{const o=document.createElement('option');o.value=k;dl.appendChild(o);});
+document.body.appendChild(dl);
+
+// Init with one empty row
+addRow();
+</script>
+
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+  // Pre-fill form fields
+  document.getElementById('f_customer').value = 'บริษัท ทดสอบ จำกัด';
+  document.getElementById('f_brand').value = 'GLOWVIT TEST BRAND';
+  document.getElementById('f_form').value = 'แคปซูล';
+  document.getElementById('f_size').value = '30 เม็ด';
+  document.getElementById('f_unit_weight').value = '1000';
+  document.getElementById('f_target').value = 'ผู้หญิง 25-40 ปี';
+  document.getElementById('f_gender').value = 'หญิง';
+  document.getElementById('f_price').value = '25';
+  document.getElementById('f_notes').value = 'สูตรพรีเมียม สำหรับทดสอบระบบ Print PDF';
+
+  // Toggle concept
+  var conceptBtns = document.querySelectorAll('#conceptGroup .tgb');
+  if (conceptBtns[0]) { conceptBtns[0].click(); } // ผิวขาว
+
+  // Load whitening template
+  loadTemplate('whitening');
+
+  // Fill sign fields
+  setTimeout(function() {
+    document.getElementById('sign_proposer').value = 'นายสมชาย ใจดี';
+    document.getElementById('sign_approver').value = 'นางสาวสมหญิง รักดี';
+    // Generate dashboard
+    generateDash();
+  }, 300);
+});
+</script>
+
+</body>
+</html>

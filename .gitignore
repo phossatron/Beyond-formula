@@ -1,0 +1,7 @@
+.vercel
+.DS_Store
+*.bak.html
+index.bak*.html
+test.html
+err.html
+node_modules/
