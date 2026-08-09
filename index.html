@@ -1089,8 +1089,8 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 //  ถ้าเว้นว่างไว้ แอปจะทำงานแบบเดิม คือเก็บข้อมูลในเครื่อง (localStorage) เท่านั้น
 //  หาได้ที่ Supabase Dashboard → Project Settings → Data API
 // ===================================================================
-let SB_URL = '';   // เช่น https://abcdefgh.supabase.co
-let SB_KEY = '';   // anon public key
+let SB_URL = 'https://uumkwaliebucxebkkllm.supabase.co';   // เช่น https://abcdefgh.supabase.co
+let SB_KEY = 'sb_publishable_yAmnKBRObKbjRxyqrzA7BA_4DQKDEU5';   // anon / publishable key
 const SB_POLL_MS = 5000;   // ดึงข้อมูลใหม่จากเซิร์ฟเวอร์ทุกกี่มิลลิวินาที
 
 // ========== THAI FDA DATABASE ==========
@@ -5691,6 +5691,8 @@ addRow();
 //  - ถ้าไม่ได้ตั้งค่า SB_URL/SB_KEY ทุกอย่างทำงานแบบเดิม (localStorage เท่านั้น)
 // ===================================================================
 function sbOn(){ return !!(typeof SB_URL!=='undefined' && SB_URL && SB_KEY); }
+// รับได้ทั้งแบบใส่ Project URL เปล่า ๆ และแบบก๊อป URL ที่ลงท้าย /rest/v1/ มาเลย
+function sbBase(){ return String(SB_URL||'').replace(/\/+$/,'').replace(/\/rest\/v1$/,''); }
 let sbReady = false;        // pull สำเร็จอย่างน้อย 1 ครั้งแล้ว
 let sbBusy = false;         // กำลังคุยกับเซิร์ฟเวอร์
 let sbApplying = false;     // กำลังเอาข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง (ห้าม push กลับ)
@@ -5702,7 +5704,7 @@ let sbSnap = {records:{}, chats:{}, users:{}, acts:{}, counter:null};
 
 async function sbReq(path, opt){
   const o = opt || {};
-  const res = await fetch(SB_URL.replace(/\/+$/,'') + '/rest/v1/' + path, {
+  const res = await fetch(sbBase() + '/rest/v1/' + path, {
     method: o.method || 'GET',
     headers: Object.assign({
       apikey: SB_KEY,
