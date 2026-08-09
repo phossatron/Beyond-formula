@@ -26,6 +26,15 @@ body{font-family:'Noto Sans Thai','Roboto','Google Sans',Arial,'Segoe UI',sans-s
 .logo svg{width:20px;height:20px;fill:currentColor}
 .hdr-title{font-size:18px;font-weight:500;letter-spacing:0;line-height:1.2}
 .hdr-sub{font-size:12px;color:var(--muted);margin-top:1px}
+/* แถบสถานะการซิงก์กับเซิร์ฟเวอร์กลาง */
+.sync-chip{margin-left:auto;display:none;align-items:center;gap:7px;font-size:12px;padding:6px 12px;border:1px solid var(--bd);border-radius:16px;background:var(--card);color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap}
+.sync-chip:hover{background:var(--card2)}
+.sync-chip.on{display:flex}
+.sync-chip::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.sync-chip.ok::before{background:var(--gr)}
+.sync-chip.busy::before{background:var(--or)}
+.sync-chip.err{color:var(--re);border-color:var(--re)}
+.sync-chip.err::before{background:var(--re)}
 /* SIDEBAR — Gmail-style nav rail */
 .sidebar{position:fixed;top:64px;left:0;width:256px;height:calc(100vh - 64px);background:var(--navy);border-right:1px solid var(--bd);padding:12px 12px 12px 0;overflow-y:auto;z-index:90;display:flex;flex-direction:column;gap:2px}
 .side-cap{font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;padding:10px 12px 6px 24px}
@@ -596,8 +605,9 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-09.5</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.1</div>
   </div>
+  <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
 
 <aside class="sidebar">
@@ -1074,6 +1084,15 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 </div><!-- /main -->
 
 <script>
+// ===================================================================
+//  ตั้งค่าเซิร์ฟเวอร์กลาง (Supabase) — ใส่ค่า 2 บรรทัดนี้แล้วข้อมูลจะซิงก์ทุกเครื่อง
+//  ถ้าเว้นว่างไว้ แอปจะทำงานแบบเดิม คือเก็บข้อมูลในเครื่อง (localStorage) เท่านั้น
+//  หาได้ที่ Supabase Dashboard → Project Settings → Data API
+// ===================================================================
+let SB_URL = '';   // เช่น https://abcdefgh.supabase.co
+let SB_KEY = '';   // anon public key
+const SB_POLL_MS = 5000;   // ดึงข้อมูลใหม่จากเซิร์ฟเวอร์ทุกกี่มิลลิวินาที
+
 // ========== THAI FDA DATABASE ==========
 // อ้างอิง: ประกาศกระทรวงสาธารณสุข ฉบับที่ 448 พ.ศ. 2566 (มีผล 4 ม.ค. 2567)
 //          ประกาศ อย. รายการพืชอนุญาต 444 ชนิด (8 ก.ค. 2567)
@@ -2693,12 +2712,23 @@ const ACT_CATS = {
   export:  'ส่งออกไฟล์',
   close:   'ปิด/เปิดงาน',
 };
+// รหัสประจำตัวของแต่ละเหตุการณ์ — ใช้เป็นคีย์บนเซิร์ฟเวอร์ ทำให้ส่งซ้ำกี่ครั้งก็ไม่เกิดรายการซ้ำ
+// รายการเก่าที่บันทึกไว้ก่อนมีฟิลด์นี้ จะคำนวณจากเนื้อหาให้ได้ค่าเดิมเสมอ
+function actUid(e){
+  if(e.uid) return e.uid;
+  const s = [e.ts, e.user, e.role, e.cat, e.action, e.detail, e.job].join('|');
+  let a = 0x811c9dc5;
+  for(let i=0;i<s.length;i++){ a ^= s.charCodeAt(i); a = (a * 0x01000193) >>> 0; }
+  e.uid = (e.ts||0).toString(36) + '-' + a.toString(36);
+  return e.uid;
+}
 function loadActivities(){
   try{ activities = JSON.parse(localStorage.getItem('fs_activities') || '[]'); }
   catch(e){ activities = []; }
 }
 function saveActivities(){
   try{ localStorage.setItem('fs_activities', JSON.stringify(activities)); }catch(e){}
+  sbQueue();
 }
 // บันทึก 1 เหตุการณ์ — เก็บผู้ใช้จริง (กรณีสวมบทบาทจะเก็บทั้งคนสวมและคนถูกสวม)
 function logAct(cat, action, detail, jobId){
@@ -2712,6 +2742,7 @@ function logAct(cat, action, detail, jobId){
     job: jobId || '',
     via: impersonator || ''
   };
+  actUid(e);
   activities.unshift(e);
   if(activities.length > ACT_MAX) activities.length = ACT_MAX;
   saveActivities();
@@ -2873,6 +2904,8 @@ function saveUsers(){
     localStorage.setItem('fs_imp', impersonator);
     localStorage.setItem('fs_userlist', JSON.stringify(userList));
   }catch(e){}
+  // currentUser / impersonator เป็นสถานะของเครื่องนี้เท่านั้น ไม่ส่งขึ้นเซิร์ฟเวอร์
+  sbQueue();
 }
 // ---------- Sales ผู้รับผิดชอบ ----------
 const SALES_OWNERS = ['01.Ham','04.Sales แกง','05.Sales ฝน','06.Sales ล๊อต','07.Sales พี่เจี๊ยบ',
@@ -3555,6 +3588,7 @@ function saveRecordsStore(){
     localStorage.setItem('fs_records', JSON.stringify(records));
     localStorage.setItem('fs_reccounter', String(recCounter));
   }catch(e){}
+  sbQueue();
 }
 // ---------- รหัสชุดข้อมูล: A00001 … A99999 → B00001 … Z99999 → AA00001 … ----------
 // recCounter = ลำดับที่รันไปเรื่อย ๆ ไม่ย้อนกลับ แม้งานจะถูกลบไปแล้ว (จึงไม่มีรหัสซ้ำ)
@@ -4205,7 +4239,9 @@ function loadChats(){
   catch(e){ chats = []; }
   chats.forEach(c=>{ c.messages=c.messages||[]; c.parts=c.parts||[]; c.approvals=c.approvals||{}; });
 }
-function saveChats(){ try{ localStorage.setItem('fs_chats', JSON.stringify(chats)); }catch(e){} }
+function saveChats(){ try{ localStorage.setItem('fs_chats', JSON.stringify(chats)); }catch(e){}
+  sbQueue();
+}
 function getChat(jobId){ return chats.find(c=>c.jobId===jobId) || null; }
 // ---------- เมนูย่อยรหัสงานใต้ Chat Message ----------
 function visibleChats(){ return chats.filter(c=>canSeeRecord(records.find(x=>x.id===c.jobId))); }
@@ -5647,6 +5683,218 @@ document.body.appendChild(dl);
 // Init with one empty row
 addRow();
 
+// ===================================================================
+//  ซิงก์ข้อมูลกลางผ่าน Supabase REST
+//  - เก็บ object รูปทรงเดิมทั้งก้อนเป็น jsonb (ดูกฎข้อ 1 ใน CLAUDE.md)
+//  - เขียน: ทุกครั้งที่แอปบันทึก จะส่งเฉพาะรายการที่เปลี่ยนจริงขึ้นเซิร์ฟเวอร์
+//  - อ่าน: ดึงข้อมูลใหม่ทุก SB_POLL_MS แล้วอัพเดตหน้าจอถ้ามีการเปลี่ยนแปลง
+//  - ถ้าไม่ได้ตั้งค่า SB_URL/SB_KEY ทุกอย่างทำงานแบบเดิม (localStorage เท่านั้น)
+// ===================================================================
+function sbOn(){ return !!(typeof SB_URL!=='undefined' && SB_URL && SB_KEY); }
+let sbReady = false;        // pull สำเร็จอย่างน้อย 1 ครั้งแล้ว
+let sbBusy = false;         // กำลังคุยกับเซิร์ฟเวอร์
+let sbApplying = false;     // กำลังเอาข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง (ห้าม push กลับ)
+let sbErr = '';             // ข้อความ error ล่าสุด
+let sbPushTimer = null;
+let sbLastPush = 0;
+// สแนปช็อตของสิ่งที่เซิร์ฟเวอร์มี (เท่าที่เรารู้) ใช้หาว่าอะไรเปลี่ยน/ถูกลบ
+let sbSnap = {records:{}, chats:{}, users:{}, acts:{}, counter:null};
+
+async function sbReq(path, opt){
+  const o = opt || {};
+  const res = await fetch(SB_URL.replace(/\/+$/,'') + '/rest/v1/' + path, {
+    method: o.method || 'GET',
+    headers: Object.assign({
+      apikey: SB_KEY,
+      Authorization: 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json'
+    }, o.headers || {}),
+    body: o.body ? JSON.stringify(o.body) : undefined
+  });
+  if(!res.ok){
+    const t = await res.text();
+    throw new Error(res.status + ' ' + t.slice(0,180));
+  }
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+function sbUpsert(table, rows){
+  if(!rows.length) return Promise.resolve();
+  return sbReq(table, {method:'POST', body:rows,
+    headers:{Prefer:'resolution=merge-duplicates,return=minimal'}});
+}
+function sbDelete(table, col, keys){
+  if(!keys.length) return Promise.resolve();
+  const inList = '(' + keys.map(k=>'"' + String(k).replace(/"/g,'') + '"').join(',') + ')';
+  return sbReq(table + '?' + col + '=in.' + encodeURIComponent(inList), {method:'DELETE'});
+}
+
+// ---------- สถานะบน header ----------
+function sbChip(){
+  const el = document.getElementById('syncChip');
+  if(!el) return;
+  if(!sbOn()){ el.className='sync-chip'; return; }
+  let cls = 'sync-chip on', txt;
+  if(sbErr){ cls += ' err'; txt = 'ซิงก์ไม่สำเร็จ — กดเพื่อลองใหม่'; }
+  else if(sbBusy){ cls += ' busy'; txt = 'กำลังซิงก์…'; }
+  else if(sbReady){ cls += ' ok'; txt = 'ซิงก์แล้ว' + (sbLastPush ? ' · ' + new Date(sbLastPush).toLocaleTimeString('th-TH') : ''); }
+  else { txt = 'กำลังเชื่อมต่อ…'; }
+  el.className = cls;
+  el.textContent = txt;
+  el.title = sbErr ? ('ข้อผิดพลาด: ' + sbErr + '\nกดเพื่อลองซิงก์ใหม่') : 'ข้อมูลซิงก์กับเซิร์ฟเวอร์กลาง — กดเพื่อซิงก์ทันที';
+}
+
+// ---------- ดึงข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง ----------
+async function sbPull(){
+  const [rec, cht, usr, met, act] = await Promise.all([
+    sbReq('fs_records?select=id,data'),
+    sbReq('fs_chats?select=job_id,data'),
+    sbReq('fs_users?select=name,data'),
+    sbReq('fs_meta?select=key,value'),
+    sbReq('fs_activities?select=data&order=ts.desc&limit=' + ACT_MAX)
+  ]);
+  return {
+    records: (rec||[]).map(x=>x.data).filter(Boolean),
+    chats:   (cht||[]).map(x=>x.data).filter(Boolean),
+    users:   (usr||[]).map(x=>x.data).filter(Boolean),
+    acts:    (act||[]).map(x=>x.data).filter(Boolean),
+    counter: (function(){ const m=(met||[]).find(x=>x.key==='reccounter'); return m ? Number(m.value)||0 : null; })(),
+    empty:   !(rec||[]).length && !(cht||[]).length && !(usr||[]).length && !(act||[]).length
+  };
+}
+
+// เอาข้อมูลจากเซิร์ฟเวอร์มาแทนที่ในเครื่อง แล้ว re-render ถ้ามีอะไรเปลี่ยนจริง
+function sbApply(d){
+  const before = JSON.stringify([records, chats, userList, activities.length, recCounter]);
+  sbApplying = true;
+  try{
+    records = d.records.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    chats   = d.chats.slice().sort((a,b)=>chatLastTs(b)-chatLastTs(a));
+    chats.forEach(c=>{ c.messages=c.messages||[]; c.parts=c.parts||[]; c.approvals=c.approvals||{}; });
+    activities = d.acts.slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+    if(d.users.length) userList = d.users;
+    if(d.counter!=null && d.counter > recCounter) recCounter = d.counter;
+    syncRecCounter();
+    // เก็บสำเนาไว้ในเครื่องด้วย เผื่อเน็ตหลุดจะยังเปิดดูข้อมูลล่าสุดได้
+    saveRecordsStore(); saveChats(); saveActivities(); saveUsers();
+  } finally { sbApplying = false; }
+  sbSnapshot();
+  if(JSON.stringify([records, chats, userList, activities.length, recCounter]) === before) return false;
+  sbRerender();
+  return true;
+}
+
+// วาดหน้าจอใหม่โดยไม่ให้ข้อความที่ผู้ใช้พิมพ์ค้างอยู่หายไป
+function sbRerender(){
+  const ta = document.getElementById('chatInput');
+  const keep = ta ? {v:ta.value, s:ta.selectionStart, e:ta.selectionEnd, focus:document.activeElement===ta} : null;
+  renderUserUI();
+  updateChatBadge();
+  renderRecordsList();
+  if(document.getElementById('chatView') && document.getElementById('chatView').classList.contains('on')) renderChat();
+  if(document.getElementById('actView') && document.getElementById('actView').classList.contains('on')) renderActivities();
+  if(keep){
+    const nta = document.getElementById('chatInput');
+    if(nta){ nta.value = keep.v; if(keep.focus){ nta.focus(); try{ nta.setSelectionRange(keep.s, keep.e); }catch(e){} } }
+  }
+}
+
+// ---------- จำสภาพปัจจุบันว่าตรงกับเซิร์ฟเวอร์แล้ว ----------
+function sbSnapshot(){
+  const m = {records:{}, chats:{}, users:{}, acts:{}, counter:recCounter};
+  records.forEach(r=>{ m.records[r.id] = JSON.stringify(r); });
+  chats.forEach(c=>{ m.chats[c.jobId] = JSON.stringify(c); });
+  userList.forEach(u=>{ m.users[u.name] = JSON.stringify(u); });
+  activities.forEach(e=>{ m.acts[actUid(e)] = 1; });
+  sbSnap = m;
+}
+
+// ---------- ส่งเฉพาะสิ่งที่เปลี่ยนขึ้นเซิร์ฟเวอร์ ----------
+async function sbPush(){
+  const recUp = [], chtUp = [], usrUp = [], actUp = [];
+  const seenR = {}, seenC = {}, seenU = {};
+  records.forEach(r=>{ const j = JSON.stringify(r); seenR[r.id]=1;
+    if(sbSnap.records[r.id] !== j) recUp.push({id:r.id, data:r}); });
+  chats.forEach(c=>{ const j = JSON.stringify(c); seenC[c.jobId]=1;
+    if(sbSnap.chats[c.jobId] !== j) chtUp.push({job_id:c.jobId, data:c}); });
+  userList.forEach(u=>{ const j = JSON.stringify(u); seenU[u.name]=1;
+    if(sbSnap.users[u.name] !== j) usrUp.push({name:u.name, data:u}); });
+  // ลบเฉพาะรายการที่เคยอยู่บนเซิร์ฟเวอร์แล้วถูกลบในเครื่องนี้จริง
+  const recDel = Object.keys(sbSnap.records).filter(k=>!seenR[k]);
+  const chtDel = Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
+  const usrDel = Object.keys(sbSnap.users).filter(k=>!seenU[k]);
+  activities.forEach(e=>{ const u = actUid(e); if(!sbSnap.acts[u]) actUp.push({uid:u, ts:e.ts||0, data:e}); });
+  const counterUp = sbSnap.counter !== recCounter;
+  if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length
+     && !recDel.length && !chtDel.length && !usrDel.length && !counterUp) return false;
+
+  await sbUpsert('fs_records', recUp);
+  await sbUpsert('fs_chats', chtUp);
+  await sbUpsert('fs_users', usrUp);
+  if(actUp.length){
+    await sbUpsert('fs_activities', actUp);
+    actUp.forEach(a=>{ sbSnap.acts[a.uid] = 1; });
+  }
+  await sbDelete('fs_records', 'id', recDel);
+  await sbDelete('fs_chats', 'job_id', chtDel);
+  await sbDelete('fs_users', 'name', usrDel);
+  if(counterUp) await sbUpsert('fs_meta', [{key:'reccounter', value:recCounter}]);
+  sbSnapshot();
+  sbLastPush = Date.now();
+  return true;
+}
+
+// เรียกจากทุกจุดที่แอปบันทึกข้อมูล — รวบหลาย ๆ การบันทึกที่ติดกันเป็นครั้งเดียว
+function sbQueue(){
+  if(!sbOn() || !sbReady || sbApplying) return;
+  clearTimeout(sbPushTimer);
+  sbPushTimer = setTimeout(sbCycle, 400);
+}
+
+// ---------- รอบการซิงก์: ส่งขึ้น แล้วดึงลง ----------
+let sbCycleRunning = false;
+async function sbCycle(){
+  if(!sbOn() || sbCycleRunning) return;
+  sbCycleRunning = true; sbBusy = true; sbChip();
+  try{
+    await sbPush();
+    sbApply(await sbPull());
+    sbErr = '';
+  }catch(err){
+    sbErr = String(err && err.message || err);
+    console.warn('[sync]', sbErr);
+  }finally{
+    sbBusy = false; sbCycleRunning = false; sbChip();
+  }
+}
+function sbManualSync(){ if(sbOn()){ sbErr=''; sbCycle(); } }
+
+// ---------- เริ่มทำงานตอนเปิดแอป ----------
+async function sbBoot(){
+  if(!sbOn()) return;
+  sbChip();
+  try{
+    const d = await sbPull();
+    if(d.empty && (records.length || chats.length || userList.length)){
+      // เซิร์ฟเวอร์ยังว่าง แต่เครื่องนี้มีข้อมูลอยู่ → ยกข้อมูลชุดแรกขึ้นไปตั้งต้น
+      sbReady = true; sbSnap = {records:{}, chats:{}, users:{}, acts:{}, counter:null};
+      await sbPush();
+      sbApply(await sbPull());
+    } else {
+      sbApply(d);
+      sbReady = true;
+      // ข้อมูลในเครื่องที่เซิร์ฟเวอร์ยังไม่มี (เช่นสร้างไว้ตอนเน็ตหลุด) จะถูกส่งขึ้นในรอบถัดไป
+    }
+    sbErr = '';
+  }catch(err){
+    sbErr = String(err && err.message || err);
+    console.warn('[sync] เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ใช้ข้อมูลในเครื่องต่อไป:', sbErr);
+  }
+  sbChip();
+  setInterval(()=>{ if(!document.hidden) sbCycle(); }, SB_POLL_MS);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) sbCycle(); });
+}
+
 // Init activity log + user system (login state from localStorage)
 loadActivities();
 loadUsers();
@@ -5671,6 +5919,9 @@ migrateRecordOwners();
 loadChats();
 updateChatBadge();
 renderRecordsList();
+
+// เชื่อมเซิร์ฟเวอร์กลาง (ถ้าตั้งค่า SB_URL/SB_KEY ไว้)
+sbBoot();
 </script>
 </body>
 </html>
