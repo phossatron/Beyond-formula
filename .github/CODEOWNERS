@@ -1,0 +1,10 @@
+# Independent owner review is mandatory for this repository.
+* @phossatron
+
+# Critical-change paths (see AGENTS.md).
+/.github/ @phossatron
+/runtime/ @phossatron
+/supabase/ @phossatron
+/index.html @phossatron
+/AGENTS.md @phossatron
+/CLAUDE.md @phossatron
