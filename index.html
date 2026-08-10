@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.2</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.3</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -6101,6 +6101,25 @@ function sbBuildChat(row, msgRows, apvRows){
   else if(d.approvals) c.approvals = d.approvals;
   return c;
 }
+// รวมข้อความ/การอนุมัติจากอีกฝั่งเข้ากับของในเครื่อง — เพิ่มอย่างเดียว ไม่ลบของใคร
+function mergeChatPayload(c, src){
+  if(!c || !src) return false;
+  let changed = false;
+  c.messages = c.messages || [];
+  const have = {};
+  c.messages.forEach(m=>{ have[msgUid(c.jobId, m)] = 1; });
+  (src.messages || []).forEach(m=>{
+    const u = msgUid(c.jobId, m);
+    if(!have[u]){ c.messages.push(m); have[u] = 1; changed = true; }
+  });
+  if(changed) c.messages.sort((a,b)=>(a.ts||0)-(b.ts||0));
+  c.approvals = c.approvals || {};
+  CHAT_PARTS.forEach(p=>{
+    const a = (src.approvals || {})[p.key];
+    if(a && !c.approvals[p.key]){ c.approvals[p.key] = a; changed = true; }
+  });
+  return changed;
+}
 function sbGroup(rows, key){
   const m = {};
   (rows||[]).forEach(r=>{ (m[r[key]] = m[r[key]] || []).push(r); });
@@ -6180,7 +6199,11 @@ function sbApplyDelta(d){
     const id = r.job_id, meta = r.data || {};
     let c = chats.find(x=>x.jobId===id);
     if(!c){ c = {jobId:id, createdAt:meta.createdAt, createdBy:meta.createdBy, parts:meta.parts||[], messages:meta.messages||[], approvals:meta.approvals||{}}; chats.push(c); }
-    else { c.createdAt = meta.createdAt || c.createdAt; c.createdBy = meta.createdBy || c.createdBy; c.parts = meta.parts || c.parts; }
+    else {
+      c.createdAt = meta.createdAt || c.createdAt; c.createdBy = meta.createdBy || c.createdBy; c.parts = meta.parts || c.parts;
+      // ข้อความที่ฝังมากับแถวห้อง (เซิร์ฟเวอร์รูปแบบเดิม) ต้องรวมเข้ามา ไม่ใช่มองข้าม
+      mergeChatPayload(c, meta);
+    }
     sbSnap.chats[id] = JSON.stringify(r.data);
   });
   (d.msg||[]).forEach(r=>{
@@ -6285,6 +6308,9 @@ async function sbPush(){
     await sbUpsert('fs_chats', whole);
     whole.forEach(x=>{ sbSnap.chats[x.job_id] = JSON.stringify(x.data); });
   } else {
+    // เซิร์ฟเวอร์รูปแบบเดิมเก็บข้อความไว้ในแถวห้อง — ส่งทับตรง ๆ จะลบข้อความของคนอื่นทิ้ง
+    // จึงต้องอ่านของล่าสุดมารวมก่อนเสมอ
+    if(chtUp.length && !sbCap.msg) await mergeServerChats(chtUp);
     await sbUpsert('fs_chats', chtUp);
     chtUp.forEach(x=>{ sbSnap.chats[x.job_id] = JSON.stringify(x.data); });
   }
@@ -6319,6 +6345,26 @@ async function sbPush(){
   }
   sbLastPush = Date.now();
   return true;
+}
+
+// อ่านห้องแชทล่าสุดจากเซิร์ฟเวอร์มารวมกับที่กำลังจะส่ง (ใช้เฉพาะเซิร์ฟเวอร์รูปแบบเดิม)
+async function mergeServerChats(chtUp){
+  try{
+    const ids = chtUp.map(x=>x.job_id);
+    const rows = await sbReq('fs_chats?select=job_id,data&job_id=' + sbInList(ids));
+    const byId = {};
+    (rows||[]).forEach(r=>{ byId[r.job_id] = r.data || {}; });
+    chtUp.forEach(x=>{
+      const srv = byId[x.job_id];
+      if(!srv) return;
+      if(mergeChatPayload(x.data, srv)){
+        const local = chats.find(cc=>cc.jobId===x.job_id);
+        if(local && local !== x.data) mergeChatPayload(local, srv);
+      }
+    });
+  }catch(err){
+    console.warn('[sync] อ่านห้องแชทเดิมมารวมไม่สำเร็จ — ข้ามการรวมรอบนี้:', String(err && err.message || err));
+  }
 }
 
 // เรียกจากทุกจุดที่แอปบันทึกข้อมูล — รวบหลาย ๆ การบันทึกที่ติดกันเป็นครั้งเดียว
