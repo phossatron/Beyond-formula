@@ -424,6 +424,9 @@ select.fi.chat-sales{width:auto;min-width:150px;height:32px;padding:0 8px;font-s
 .act-export{background:#FCE8E6;color:#C5221F}
 .act-close{background:#F1F3F4;color:#3C4043}
 .act-tbl td{vertical-align:top}
+/* Activities log: สูงไม่เกิน 1 หน้าจอ เกินกว่านั้นเลื่อนอยู่ในตาราง หัวตารางค้างไว้ */
+.act-wrap{max-height:calc(100vh - 400px);min-height:240px;overflow-y:auto;overscroll-behavior:contain}
+.act-wrap thead th{position:sticky;top:0;z-index:2;box-shadow:inset 0 -1px 0 var(--bd)}
 .act-time{white-space:nowrap;font-family:'Roboto Mono',monospace;font-size:12px;color:var(--muted)}
 .act-detail{color:var(--tx);word-break:break-word;max-width:520px}
 /* ===== ROLES ===== */
@@ -649,7 +652,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.6</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.7</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -2220,7 +2223,7 @@ function switchView(v) {
   if(v==='modify') renderModify();
   if(v==='dash') renderRecordsList();
   if(v==='chat') renderChat();
-  if(v==='act') renderActivities();
+  if(v==='act'){ actEnsureDay(); renderActivities(); }
   if(v==='chat'){ const g=document.getElementById('chatGroup'); if(g) g.classList.add('open'); }
   if(v!=='input') { document.querySelectorAll('.side-link:not(.chat-job)').forEach(el=>el.classList.remove('on')); window.scrollTo({top:0,behavior:'auto'}); }
 }
@@ -2882,16 +2885,49 @@ function stopImpersonate(){
 
 // ---------- หน้าจอ Activities log ----------
 let actFrom='', actTo='', actUser='', actCat='', actQ='';
+// หน้าจอ Activities log ยึด "วันนี้" เป็นค่าตั้งต้น และเริ่มนับใหม่เองเมื่อข้ามเที่ยงคืน
+// เป็นการล้างเฉพาะสิ่งที่แสดงผล — รายการของวันก่อน ๆ ยังอยู่ครบ เลือกช่วงวันที่ย้อนดูได้
+let actDayLock = '';        // วันที่ที่หน้าจอกำลังยึดอยู่ ('' = ผู้ใช้เลือกดูย้อนหลังเอง)
+function actToday(){ return ymd(nowTs()); }
+function actUseToday(){
+  actFrom = actTo = actToday();
+  actDayLock = actFrom;
+}
+// เปิดหน้านี้ครั้งแรกของวัน → ตั้งเป็นวันนี้ · เปิดซ้ำในวันเดียวกัน → คงตัวกรองที่ผู้ใช้เลือกไว้
+function actEnsureDay(){
+  if(actDayLock !== actToday()) actUseToday();
+}
+// เปิดหน้าค้างไว้ข้ามคืน → พอถึงเที่ยงคืนให้เริ่มนับใหม่เองโดยไม่ต้องรีเฟรช
+function actMidnightCheck(){
+  const view = document.getElementById('actView');
+  if(!view || !view.classList.contains('on')) return;
+  if(actDayLock && actDayLock !== actToday()){ actUseToday(); renderActivities(); }
+}
+// ปรับให้ท้ายตารางพอดีขอบล่างจอเสมอ ไม่ว่าแถบตัวกรองจะตกบรรทัดกี่แถว
+function actFitHeight(){
+  const el = document.querySelector('#actContent .act-wrap');
+  if(!el || !el.offsetParent) return;   // หน้ายังไม่ถูกเปิด — วัดตำแหน่งไม่ได้
+  const top = el.getBoundingClientRect().top;
+  el.style.maxHeight = Math.max(240, Math.round(window.innerHeight - top - 24)) + 'px';
+}
+window.addEventListener('resize', actFitHeight);
+function actShowAll(){
+  actFrom = actTo = '';
+  actDayLock = '';          // เลิกยึดวันนี้ จนกว่าจะกดปุ่มวันนี้ หรือข้ามวันแล้วเปิดหน้าใหม่
+  renderActivities();
+}
 function applyActFilter(){
   actFrom = document.getElementById('actFrom').value;
   actTo   = document.getElementById('actTo').value;
+  actDayLock = (actFrom === actToday() && actTo === actToday()) ? actToday() : '';
   actUser = document.getElementById('actUser').value;
   actCat  = document.getElementById('actCat').value;
   actQ    = document.getElementById('actQ').value.trim().toLowerCase();
   renderActivities();
 }
 function clearActFilter(){
-  actFrom=actTo=actUser=actCat=actQ='';
+  actUser=actCat=actQ='';
+  actUseToday();            // ล้างตัวกรองแล้วกลับมาที่ "วันนี้" ตามค่าตั้งต้นของหน้านี้
   renderActivities();
 }
 function actFiltered(){
@@ -2932,10 +2968,11 @@ function renderActivities(){
   el.innerHTML = `
     <div class="db-hdr">
       <div class="db-title">Activities log</div>
-      <div class="db-sub">บันทึกการใช้งานของผู้ใช้ทั้งระบบ พร้อมวันเวลาและรายละเอียด</div>
+      <div class="db-sub">บันทึกการใช้งานของผู้ใช้ทั้งระบบ — หน้าจอเริ่มนับใหม่ทุกเที่ยงคืน แต่ข้อมูลเก่ายังเก็บไว้ครบ ย้อนดูได้จากช่วงวันที่</div>
       <div class="db-meta">
-        <span><b>ทั้งหมด:</b> ${activities.length} รายการ</span>
-        <span><b>แสดง:</b> ${Math.min(list.length,500)}/${list.length}</span>
+        <span><b>กำลังดู:</b> ${actDayLock ? 'วันนี้ (' + actDayLock + ')' : (actFrom||actTo ? 'ช่วงที่เลือก' : 'ย้อนหลังทั้งหมด')}</span>
+        <span><b>แสดง:</b> ${Math.min(list.length,500)}/${list.length} รายการ</span>
+        <span><b>เก็บไว้ทั้งหมด:</b> ${activities.length} รายการ</span>
         <span><b>ผู้ใช้:</b> ${users.length} คน</span>
       </div>
     </div>
@@ -2955,9 +2992,11 @@ function renderActivities(){
         </select>
         <input class="fi" id="actQ" value="${esc(actQ)}" placeholder="ค้นหาข้อความ / รหัสงาน" style="width:auto;min-width:200px;height:36px" onkeydown="if(event.key==='Enter')applyActFilter()">
         <button class="btn btn-s btn-sm" onclick="applyActFilter()">ค้นหา</button>
+        <button class="btn btn-g btn-sm" onclick="actUseToday();renderActivities()">วันนี้</button>
+        <button class="btn btn-g btn-sm" onclick="actShowAll()">ย้อนหลังทั้งหมด</button>
         <button class="btn btn-g btn-sm" onclick="clearActFilter()">ล้างตัวกรอง</button>
       </div>
-      <div class="rec-wrap">
+      <div class="rec-wrap act-wrap">
         <table class="rec-tbl act-tbl">
           <thead><tr><th>เวลา</th><th>ผู้ใช้</th><th>Role</th><th>ประเภท</th><th>การกระทำ</th><th>รายละเอียด</th><th>รหัสงาน</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -2965,6 +3004,7 @@ function renderActivities(){
       </div>
       ${list.length>500?'<div style="font-size:12px;color:var(--muted);margin-top:10px">แสดง 500 รายการล่าสุด — ใช้ตัวกรองเพื่อดูช่วงอื่น</div>':''}
     </div>`;
+  actFitHeight();
 }
 
 function loadUsers(){
@@ -6521,6 +6561,9 @@ async function sbBoot(){
   // กลับมาที่แท็บนี้ = ซิงก์ทันที ไม่ต้องรอรอบถัดไป
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) sbCycle(true); });
 }
+
+// นาทีละครั้ง: ถ้าเปิดหน้า Activities log ค้างไว้ข้ามคืน ให้เริ่มนับวันใหม่เอง
+setInterval(actMidnightCheck, 60000);
 
 // Init activity log + user system (login state from localStorage)
 loadActivities();
