@@ -29,6 +29,8 @@
 |---|---|
 | Dashboard · Chat Message | ทุก Role |
 | Customer Data | Admin · Sales · OPC · MKT |
+
+Role **MKT** มีสิทธิ์เท่ากับ **Sales + PD** รวมกัน — สร้างงาน · แก้สูตร/ชุดข้อมูล · อนุมัติทั้ง PD และ Sales · ปิดงาน (แต่เห็นงานของทุกคน ไม่ถูกจำกัดเหมือน Sales)
 | Activities log | Admin |
 | สวมบทบาทผู้ใช้ | Admin (และต้องไม่ได้สวมบทบาทอยู่) |
 | จัดการผู้ใช้ | Admin (และต้องไม่ได้สวมบทบาทอยู่) |
