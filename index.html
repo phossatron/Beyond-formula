@@ -273,6 +273,12 @@ select.fi.chat-picker{width:auto;height:36px;padding:0 12px;min-width:300px;max-
 .ap-stamp{font-size:11px;color:var(--muted);font-weight:400;margin-left:auto;text-align:right;line-height:1.45}
 .ap-btn.on .ap-stamp{color:#137333}
 .ap-done{background:#E6F4EA;border:1px solid #CEEAD6;color:#137333;border-radius:8px;padding:10px 14px;font-size:13px;font-weight:500;margin-bottom:12px}
+/* ป้าย Reject — ใช้ทั้งในห้องแชทและตาราง Dashboard */
+.ap-done.ap-rej{background:#FCE8E6;border-color:#FAD2CF;color:#C5221F}
+.rec-tbl tbody tr.row-rej{background:#FCE8E6}
+.rec-tbl tbody tr.row-rej:hover{background:#FAD2CF}
+.rec-tbl tbody tr.row-rej td{border-bottom-color:#FAD2CF}
+.chat-badge.rej{background:#FCE8E6;color:#C5221F;border-color:#FAD2CF}
 .jd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:0 22px}
 @media(max-width:900px){.chat-layout{grid-template-columns:1fr}.chat-box{height:440px}}
 /* LAYOUT */
@@ -457,7 +463,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 .rec-tbl input:hover{border-color:var(--bd)}
 .rec-tbl input:focus{outline:none;border-color:var(--or);box-shadow:inset 0 0 0 1px var(--or)}
 /* ===== DASHBOARD STAT CARDS (Google 4 colours) ===== */
-.stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
 .stat-card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:18px 20px;display:flex;align-items:center;gap:16px;transition:.15s;width:100%;text-align:left;font-family:inherit;cursor:pointer}
 .stat-card:hover{box-shadow:var(--el1);background:var(--navy)}
 .stat-card.on{background:var(--card)}
@@ -489,7 +495,9 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 .stat-card.close .stat-ic{background:#F1F3F4;color:#5F6368}
 .stat-card.close .stat-num{color:#3C4043}
 .stat-card.close.on{box-shadow:inset 0 0 0 2px #5F6368}
-@media(max-width:1400px){.stat-grid{grid-template-columns:repeat(3,1fr)}}
+.stat-card.reject .stat-ic{background:#FAD2CF;color:#C5221F}
+.stat-card.reject .stat-num{color:#C5221F}
+.stat-card.reject.on{box-shadow:inset 0 0 0 2px #C5221F}
 @media(max-width:1000px){.stat-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.stat-grid{grid-template-columns:1fr}}
 /* ===== DASHBOARD ===== */
@@ -652,7 +660,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.8</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.9</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3905,6 +3913,27 @@ function visibleRecords(){
 function canSeeRecord(r){
   return !!r && (!can('ownOnly') || r.createdBy===currentUser);
 }
+// เจ้าของงาน = คนที่กดสร้างงานนี้ หรือ Sales ที่ถูกระบุเป็นผู้รับผิดชอบงานนี้
+// (งานที่ Admin/OPC สร้างแทน จะระบุชื่อ Sales ไว้ในช่อง Sales ผู้รับผิดชอบ)
+function isJobOwner(r){
+  if(!r || !currentUser) return false;
+  if(r.createdBy === currentUser) return true;
+  const owner = r.salesOwner || '';
+  if(!owner) return false;
+  if(owner === currentUser) return true;
+  const mine = matchSalesOwner(currentUser) || currentUser;
+  return normSalesName(owner) === normSalesName(mine);
+}
+// Reject งานได้: Admin · หรือ Sales / MKT ที่เป็นเจ้าของงานนั้น
+function canReject(r){
+  if(!r || !currentUser) return false;
+  if(currentRole() === 'admin') return true;
+  const role = currentRole();
+  if(role !== 'sales' && role !== 'mkt') return false;
+  return isJobOwner(r);
+}
+// งานที่ยังเดินอยู่ = ยังไม่ปิด และยังไม่ถูก Reject
+function isJobActive(r){ return !!r && !r.closed && !r.rejected; }
 // อนุมัติครบทุกฝ่ายแล้วหรือยัง (ใช้กับแถบสีเขียวในตาราง + การ์ดสรุป)
 function isFullyApproved(r){
   const c = getChat(r.id);
@@ -3946,14 +3975,15 @@ function renderRecordsList(){
   panel.style.display='block';
 
   const mine = visibleRecords();
-  const nClosed = mine.filter(r=>r.closed).length;
+  const nClosed = mine.filter(r=>r.closed && !r.rejected).length;
+  const nRej = mine.filter(r=>r.rejected).length;
   const filtered = mine.filter(r=>{
     const day = ymd(r.createdAt);
     return (!recFromStr || day>=recFromStr) && (!recToStr || day<=recToStr) && matchStatFilter(r);
   });
 
   const body = filtered.length ? filtered.map(r=>`
-    <tr class="${isFullyApproved(r) ? 'row-done' : ''}">
+    <tr class="${r.rejected ? 'row-rej' : (isFullyApproved(r) ? 'row-done' : '')}">
       <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button></td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
@@ -3962,7 +3992,10 @@ function renderRecordsList(){
       <td style="white-space:nowrap">${esc(r.date)}</td>
       <td>${esc(r.createdBy||'-')}</td>
       <td style="text-align:center">${chatCell(r.id)}</td>
-      <td style="text-align:center">${r.closed
+      <td style="text-align:center">${r.rejected
+        ? `<span class="chat-badge rej" style="margin-left:0" title="Reject ${esc(r.rejected.at||'')}${r.rejected.by?' โดย '+esc(r.rejected.by):''}">Reject</span>
+           <div class="rec-closed-at">${esc(r.rejected.at||'')}${r.rejected.by?' · '+esc(r.rejected.by):''}</div>`
+        : r.closed
         ? `<span class="chat-badge" style="margin-left:0" title="ปิดงาน ${esc(r.closed.at||'')}${r.closed.by?' โดย '+esc(r.closed.by):''}">ปิดงาน</span>
            <div class="rec-closed-at">${esc(r.closed.at||'')}${r.closed.by?' · '+esc(r.closed.by):''}</div>`
         : '<span class="pass-none">—</span>'}</td>
@@ -3979,6 +4012,7 @@ function renderRecordsList(){
       <div class="dbc-t">รายการที่บันทึก · Customer Data Records <span style="color:var(--muted);font-weight:400;text-transform:none">(${filtered.length}/${mine.length})</span>
         ${statFilter?`<span class="filter-chip ${statFilter}">${STAT_LABEL[statFilter]}<button onclick="setStatFilter('')" title="ล้างตัวกรอง">×</button></span>`:''}
         ${(!statFilter && nClosed) ? `<span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11.5px">· ปิดงานแล้ว ${nClosed} รายการ เก็บอยู่ใน <button class="rec-idlink" onclick="setStatFilter('close')">Close job</button></span>` : ''}
+        ${(!statFilter && nRej) ? `<span style="color:var(--muted);font-weight:400;text-transform:none;font-size:11.5px">· Reject ${nRej} รายการ เก็บอยู่ใน <button class="rec-idlink" onclick="setStatFilter('reject')">Reject</button></span>` : ''}
       </div>
       <div class="rec-filter">
         <span class="rec-fl-lbl">ช่วงวันที่</span>
@@ -4006,8 +4040,9 @@ function renderRecordsList(){
 // ไม่ถูกนับรวมในการ์ด ทั้งหมด / รออนุมัติ / อนุมัติแล้ว / Export อีก
 function dashStats(){
   const list = visibleRecords();
-  const closed = list.filter(r=>r.closed).length;
-  const active = list.filter(r=>!r.closed);
+  const rejected = list.filter(r=>r.rejected).length;
+  const closed = list.filter(r=>r.closed && !r.rejected).length;
+  const active = list.filter(isJobActive);
   const total = active.length;
   let approved = 0, exported = 0;
   active.forEach(r=>{
@@ -4015,7 +4050,7 @@ function dashStats(){
     if(isFullyApproved(r)) approved++;
     if(c && c.exports > 0) exported++;
   });
-  return { total, approved, exported, closed, pending: total - approved };
+  return { total, approved, exported, closed, rejected, pending: total - approved };
 }
 
 const STAT_ICONS = {
@@ -4024,9 +4059,10 @@ const STAT_ICONS = {
   done: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9Z"/>',
   exp:  '<path d="M19 12v7H5v-7H3v7a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2Zm-6 .67 2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67Z"/>',
   close:'<path d="M20 6h-2.18A3 3 0 0 0 18 5a3 3 0 0 0-5.24-2L12 3.9 11.24 3A3 3 0 0 0 6 5c0 .35.07.69.18 1H4a2 2 0 0 0-2 2v2h20V8a2 2 0 0 0-2-2Zm-5-2a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM9 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM3 19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8H3v8Zm5.7-4.3 1.4-1.4 1.9 1.9 3.9-3.9 1.4 1.4-5.3 5.3-3.3-3.3Z"/>',
+  reject:'<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm3.59-12L12 11.59 8.41 8 7 9.41 10.59 13 7 16.59 8.41 18 12 14.41 15.59 18 17 16.59 13.41 13 17 9.41 15.59 8Z"/>',
 };
 
-const STAT_LABEL = {all:'ทั้งหมด', wait:'รออนุมัติ', done:'อนุมัติแล้ว', exp:'Export', close:'Close job'};
+const STAT_LABEL = {all:'ทั้งหมด', wait:'รออนุมัติ', done:'อนุมัติแล้ว', exp:'Export', close:'Close job', reject:'Reject'};
 let statFilter = '';   // '' = ทั้งหมด · 'wait' | 'done' | 'exp'
 
 function statCard(kind, num, label, sub){
@@ -4051,6 +4087,8 @@ function setStatFilter(kind){
 }
 // เงื่อนไขของแต่ละการ์ด (ใช้ร่วมกับฟิลเตอร์ช่วงวันที่)
 function matchStatFilter(r){
+  if(statFilter==='reject') return !!r.rejected;  // กล่อง Reject = งานที่ถูกตีกลับ
+  if(r.rejected) return false;                    // ถูก Reject แล้ว → ไม่แสดงในหัวข้ออื่น
   if(statFilter==='close') return !!r.closed;   // กล่อง Close job = คลังงานที่ปิดแล้ว
   if(r.closed) return false;                    // ปิดงานแล้ว → ไม่แสดงในหัวข้ออื่น
   if(!statFilter) return true;
@@ -4072,6 +4110,7 @@ function renderDashStats(){
     ${statCard('done', s.approved, 'อนุมัติแล้ว', 'PD · RA · RD · Sales ครบ')}
     ${statCard('exp',  s.exported, 'Export',      'ส่งออกไฟล์ Excel แล้ว')}
     ${statCard('close', s.closed,   'Close job',   'ปิดงานแล้ว · เก็บเข้าคลัง')}
+    ${statCard('reject', s.rejected, 'Reject',      'ถูกตีกลับ · รอแก้ไข')}
   </div>`;
 }
 
@@ -4509,7 +4548,7 @@ function visibleChats(){ return chats.filter(c=>canSeeRecord(records.find(x=>x.i
 function openChats(){
   return visibleChats().filter(c=>{
     const r = records.find(x=>x.id===c.jobId);
-    return r && !r.closed;
+    return isJobActive(r);
   });
 }
 // เวลาอัพเดทล่าสุดของห้อง (ข้อความ/ระบบ/การอนุมัติ ล้วนถูกบันทึกเป็นข้อความ)
@@ -4985,6 +5024,7 @@ function chatRoomHTML(c, r){
         <div class="chat-panel">
           <div class="chat-panel-t">สถานะงาน</div>
           ${closeJobHTML(r)}
+          ${rejectJobHTML(r)}
         </div>
       </div>
     </div>`;
@@ -5083,8 +5123,71 @@ function chatIngDel(jobId, i){
 
 function toggleChatJob(){ chatJobOpen = !chatJobOpen; renderChat(); }
 
+// ---- Reject งาน (Sales เจ้าของงาน / Admin) ----
+// งานที่ถูก Reject จะถูกเก็บเข้ากล่อง Reject ในหน้า Dashboard และหายจากเมนูซ้าย
+function rejectJobHTML(r){
+  if(r.rejected){
+    return `<div class="ap-done ap-rej">Reject แล้ว · ${esc(r.rejected.at)}${r.rejected.by?' โดย '+esc(r.rejected.by):''}</div>
+      <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-bottom:6px" onclick="gotoRejectBox()">ดูในกล่อง Reject</button>
+      ${canReject(r) ? `<button class="btn btn-g btn-sm" style="width:100%;justify-content:center" onclick="unrejectJob('${r.id}')">ยกเลิก Reject</button>` : ''}`;
+  }
+  if(r.closed) return '';   // ปิดงานไปแล้ว ไม่ต้องมีปุ่ม Reject
+  if(!canReject(r))
+    return `<div style="font-size:11.5px;color:var(--muted);margin-top:10px">Reject ได้เฉพาะ Admin และ Sales เจ้าของงานนี้</div>`;
+  return `<button class="btn btn-r btn-sm" style="width:100%;justify-content:center;margin-top:10px" onclick="rejectJob('${r.id}')">Reject งานนี้</button>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">ตีงานกลับเมื่อข้อมูลไม่ถูกต้อง หรือลูกค้ายกเลิก</div>`;
+}
+function gotoRejectBox(){
+  switchView('dash');
+  statFilter = 'reject';
+  renderRecordsList();
+  const panel = document.getElementById('recordsPanel');
+  if(panel) panel.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+function rejectJob(id){
+  const r = records.find(x=>x.id===id);
+  if(!r) return;
+  if(!canReject(r)){ alert('Reject ได้เฉพาะ Admin และ Sales เจ้าของงานนี้'); return; }
+  if(r.rejected) return;
+  askConfirm('Reject งาน ' + r.id + '?',
+    ['งานจะถูกเก็บเข้ากล่อง Reject ในหน้า Dashboard',
+     'รหัสงานจะหายจากเมนูด้านซ้ายใต้ Chat Message',
+     'ยกเลิก Reject ได้ภายหลังจากป๊อปอัพรายละเอียดงาน'],
+    'Reject งานนี้', ()=>doRejectJob(r), true);
+}
+function doRejectJob(r){
+  r.rejected = {by: currentUser||'', at: new Date().toLocaleString('th-TH'), ts: nowTs()};
+  logAct('close','Reject งาน', (r.brand||r.customer||''), r.id);
+  const idx = records.findIndex(x=>x.id===r.id);
+  if(idx>=0){ records[idx]=r; saveRecordsStore(); }
+  const c = getChat(r.id);
+  if(c){ pushSys(c, `${currentUser} Reject งานนี้ — งานถูกตีกลับ`); touchChatPart(c, currentUser, false); saveChats(); }
+  updateChatBadge();
+  renderChat(); renderRecordsList();
+}
+function unrejectJob(id){
+  const r = records.find(x=>x.id===id);
+  if(!r || !r.rejected) return;
+  if(!canReject(r)){ alert('ยกเลิก Reject ได้เฉพาะ Admin และ Sales เจ้าของงานนี้'); return; }
+  askConfirm('ยกเลิก Reject ' + r.id + '?',
+    ['งานจะกลับมาอยู่ในรายการที่กำลังดำเนินการ',
+     'รหัสงานจะกลับเข้าเมนูด้านซ้ายใต้ Chat Message'],
+    'ยกเลิก Reject', ()=>doUnrejectJob(r));
+}
+function doUnrejectJob(r){
+  delete r.rejected;
+  logAct('close','ยกเลิก Reject', (r.brand||r.customer||''), r.id);
+  const idx = records.findIndex(x=>x.id===r.id);
+  if(idx>=0){ records[idx]=r; saveRecordsStore(); }
+  const c = getChat(r.id);
+  if(c){ pushSys(c, `${currentUser} ยกเลิก Reject — งานกลับมาดำเนินการต่อ`); touchChatPart(c, currentUser, false); saveChats(); }
+  updateChatBadge();
+  renderChat(); renderRecordsList();
+}
+
 // ---- ปิดงาน / เปิดงานใหม่ (Close job) ----
 function closeJobHTML(r){
+  if(r.rejected) return '';   // งานที่ถูก Reject ไว้ ต้องยกเลิก Reject ก่อนจึงจะปิดงานได้
   if(r.closed){
     return `<div class="ap-done" style="background:#F1F3F4;border-color:var(--bd);color:var(--tx)">ปิดงานแล้ว · ${esc(r.closed.at)}${r.closed.by?' โดย '+esc(r.closed.by):''}</div>
       <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-bottom:6px" onclick="gotoCloseBox()">ดูในกล่อง Close job</button>
@@ -5107,6 +5210,7 @@ function closeJob(id){
   const r = records.find(x=>x.id===id);
   if(!r) return;
   if(!requirePerm('closeJob','ปิดงานได้เฉพาะ Role: Admin, Sales, OPC')) return;
+  if(r.rejected){ alert('งานนี้ถูก Reject อยู่ — ยกเลิก Reject ก่อนจึงจะปิดงานได้'); return; }
   askConfirm('ปิดงาน ' + r.id + '?',
     ['งานจะถูกเก็บเข้ากล่อง Close job ในหน้า Dashboard',
      'รหัสงานจะหายจากเมนูด้านซ้ายใต้ Chat Message',

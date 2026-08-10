@@ -57,6 +57,7 @@ allBenefits allSP cons
 rows          // array ของสาร: {num, name, w, o, p, actual, note, hero, fda}
 modNote       // {text, savedBy, savedAt}
 closed        // {by, at, ts} — มีเมื่อปิดงานแล้วเท่านั้น
+rejected      // {by, at, ts} — มีเมื่อถูก Reject เท่านั้น (ยกเลิก Reject = ลบฟิลด์นี้ทิ้ง)
 ```
 
 ### user (`fs_userlist[]`)
