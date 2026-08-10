@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.2</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -5085,7 +5085,7 @@ function sendChatMsg(){
   if(nta) nta.focus();
 }
 
-// PD / RA / RD Pass — กดเพื่ออนุมัติ (กดซ้ำเพื่อยกเลิก)
+// PD / RA / RD / Sales Pass — กดเพื่ออนุมัติ (กดซ้ำเพื่อยกเลิก)
 function toggleChatApprove(jobId, key){
   const c = getChat(jobId);
   if(!c) return;
@@ -5096,21 +5096,56 @@ function toggleChatApprove(jobId, key){
     return;
   }
   const a = c.approvals[key];
-  if(a){
-    if(!confirm(`ยกเลิกการอนุมัติ ${part.label}?\n(อนุมัติโดย ${a.by||'-'} · ${a.at})`)) return;
-    c.approvals[key] = null;
-    logAct('approve','ยกเลิกการอนุมัติ '+part.label, 'อนุมัติเดิมโดย '+(a.by||'-')+' · '+a.at, jobId);
-    pushSys(c, `${currentUser} ยกเลิกการอนุมัติ ${part.label}`);
-  } else {
-    c.approvals[key] = {by: currentUser, at: new Date().toLocaleString('th-TH'), ts: Date.now()};
-    logAct('approve','อนุมัติ '+part.label, 'ครบ '+CHAT_PARTS.filter(p=>c.approvals[p.key]).length+'/'+NPARTS+' ฝ่าย', jobId);
-    pushSys(c, `${currentUser} อนุมัติ ${part.label} ✓`);
-    if(CHAT_PARTS.every(p=>c.approvals[p.key]))
-      pushSys(c, 'อนุมัติครบทุกฝ่ายแล้ว — สามารถ Export Excel ได้');
+  if(!a){ approveOn(jobId, key); return; }
+  const r = records.find(x=>x.id===jobId);
+  const lines = ['อนุมัติเดิมโดย ' + (a.by||'-') + ' · ' + a.at];
+  if(r && r.closed){
+    lines.push('งานนี้ปิดไปแล้ว (' + (r.closed.at||'') + ')');
+    lines.push('ยกเลิกการอนุมัติ = ดึงงานกลับมาแก้ไข รหัสงานจะกลับเข้าเมนู Chat Message อีกครั้ง');
   }
+  askConfirm('ยกเลิกการอนุมัติ ' + part.label, lines,
+    (r && r.closed) ? 'ยกเลิกและดึงงานกลับ' : 'ยกเลิกการอนุมัติ',
+    function(){ approveOff(jobId, key); }, true);
+}
+function approveOn(jobId, key){
+  const c = getChat(jobId);
+  if(!c) return;
+  const part = CHAT_PARTS.find(p=>p.key===key);
+  c.approvals[key] = {by: currentUser, at: new Date().toLocaleString('th-TH'), ts: Date.now()};
+  logAct('approve','อนุมัติ '+part.label, 'ครบ '+CHAT_PARTS.filter(p=>c.approvals[p.key]).length+'/'+NPARTS+' ฝ่าย', jobId);
+  pushSys(c, `${currentUser} อนุมัติ ${part.label} ✓`);
+  if(CHAT_PARTS.every(p=>c.approvals[p.key]))
+    pushSys(c, 'อนุมัติครบทุกฝ่ายแล้ว — สามารถ Export Excel ได้');
+  afterApproveChange(c);
+}
+function approveOff(jobId, key){
+  const c = getChat(jobId);
+  if(!c) return;
+  const part = CHAT_PARTS.find(p=>p.key===key);
+  const a = c.approvals[key];
+  if(!a) return;
+  c.approvals[key] = null;
+  logAct('approve','ยกเลิกการอนุมัติ '+part.label, 'อนุมัติเดิมโดย '+(a.by||'-')+' · '+a.at, jobId);
+  pushSys(c, `${currentUser} ยกเลิกการอนุมัติ ${part.label}`);
+  // งานที่ปิดไปแล้ว ถ้าถอนการอนุมัติออก = ยังไม่จบงาน
+  // → ดึงกลับมาเป็นงานที่ยังไม่ปิดทันที รหัสงานจะกลับเข้าเมนู Chat Message เอง
+  const r = records.find(x=>x.id===jobId);
+  if(r && r.closed){
+    delete r.closed;
+    logAct('close','ดึงงานกลับจากกล่อง Close job', 'ยกเลิก ' + part.label + ' เพื่อแก้ไขข้อมูล', jobId);
+    pushSys(c, `${currentUser} ดึงงานกลับมาแก้ไข — งานนี้กลับสู่สถานะยังไม่ปิด`);
+    const idx = records.findIndex(x=>x.id===jobId);
+    if(idx>=0) records[idx] = r;
+    saveRecordsStore();
+  }
+  afterApproveChange(c);
+}
+function afterApproveChange(c){
   touchChatPart(c, currentUser, false);
   saveChats();
+  updateChatBadge();      // เมนูซ้าย: จำนวนอนุมัติ + งานที่ถูกดึงกลับเข้ามาใหม่
   renderChat();
+  renderRecordsList();    // Dashboard: ย้ายออกจากกล่อง Close job ทันที
 }
 
 // ---- Export Excel (แสดงเมื่ออนุมัติครบ PD / RA / RD) ----
