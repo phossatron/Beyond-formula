@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.4</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.5</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -2768,6 +2768,18 @@ function actUid(e){
   e.uid = (e.ts||0).toString(36) + '-' + a.toString(36);
   return e.uid;
 }
+// ---------- เวลาอ้างอิงกลาง ----------
+// sbSkew = เวลาเซิร์ฟเวอร์ − เวลาเครื่องนี้ (มิลลิวินาที) ตั้งอัตโนมัติจาก header ของทุก response
+// ใช้ var เพื่อให้เรียก nowTs() ได้ตั้งแต่โค้ดบรรทัดแรก ๆ
+var sbSkew = 0;
+function nowTs(){ return Date.now() + sbSkew; }
+function sbNoteSkew(serverMs){
+  if(!serverMs) return;
+  const diff = serverMs - Date.now();
+  // header Date ละเอียดแค่ระดับวินาที + มีเวลาเดินทางของ response
+  // จึงปรับเฉพาะตอนที่ต่างกันจริงจัง ไม่ไล่ตามความคลาดเคลื่อนเล็ก ๆ
+  if(Math.abs(diff - sbSkew) > 3000) sbSkew = diff;
+}
 function loadActivities(){
   try{ activities = JSON.parse(localStorage.getItem('fs_activities') || '[]'); }
   catch(e){ activities = []; }
@@ -2779,7 +2791,7 @@ function saveActivities(){
 // บันทึก 1 เหตุการณ์ — เก็บผู้ใช้จริง (กรณีสวมบทบาทจะเก็บทั้งคนสวมและคนถูกสวม)
 function logAct(cat, action, detail, jobId){
   const e = {
-    ts: Date.now(),
+    ts: nowTs(),
     at: new Date().toLocaleString('th-TH'),
     user: currentUser || '-',
     role: currentRole() || '-',
@@ -4468,7 +4480,9 @@ function markChatSeen(c){
   if(!c || !currentUser) return false;
   if(!c.seen) c.seen = {};
   if((c.seen[currentUser]||0) >= chatLastTs(c)) return false;
-  c.seen[currentUser] = Date.now();
+  // เก็บเวลาที่ช้ากว่าไว้เสมอ — ข้อความจากอีกเครื่องอาจมีเวลาล้ำหน้าเครื่องนี้นิดหน่อย
+  // ถ้าเก็บแค่เวลาปัจจุบัน กระดิ่งจะยังค้างอยู่ทั้งที่เพิ่งเปิดอ่านไปแล้ว
+  c.seen[currentUser] = Math.max(nowTs(), chatLastTs(c));
   return true;
 }
 function renderChatMenu(){
@@ -4512,7 +4526,7 @@ function chatDur(ms){
 // บันทึกเวลาการมีส่วนร่วมของแต่ละ Account
 function touchChatPart(c, name, isMsg){
   if(!name) return null;
-  const now = Date.now();
+  const now = nowTs();
   let p = c.parts.find(x=>x.name===name);
   if(!p){ p = {name, firstAt:now, lastAt:now, msgs:0, activeMs:0}; c.parts.push(p); }
   else {
@@ -4524,7 +4538,7 @@ function touchChatPart(c, name, isMsg){
   return p;
 }
 function pushSys(c, text){
-  c.messages.push({type:'sys', text, ts:Date.now()});
+  c.messages.push({type:'sys', text, ts:nowTs()});
 }
 
 // สร้างห้องแชทตามรหัสงาน
@@ -4534,7 +4548,7 @@ function createChat(jobId){
   let c = getChat(jobId);
   if(c) return c;
   c = {
-    jobId, createdAt: Date.now(), createdBy: currentUser||'',
+    jobId, createdAt: nowTs(), createdBy: currentUser||'',
     messages: [], parts: [], approvals: {pd:null, ra:null, rd:null}
   };
   pushSys(c, `สร้างห้องแชทงาน ${jobId} — ${r.brand||r.customer||'Formula'}${currentUser?` โดย ${currentUser}`:''}`);
@@ -4578,20 +4592,39 @@ function openChatRoom(jobId){
 function backToChatList(){ chatOpenId = null; renderChat(); }
 
 // ---- Render ----
+let chatDrawnId = null;   // ห้องที่วาดอยู่บนจอตอนนี้ ใช้ดูว่าเป็นการวาดซ้ำห้องเดิมหรือเปลี่ยนห้อง
 function renderChat(){
   const wrap = document.getElementById('chatContent');
   if(!wrap) return;
   const c = chatOpenId ? getChat(chatOpenId) : null;
   const r = c ? records.find(x=>x.id===c.jobId) : null;
+  // ข้อความใหม่เข้ามาทุก 3 วินาที ถ้าวาดใหม่ดื้อ ๆ คนที่กำลังพิมพ์จะถูกล้างช่องพิมพ์
+  // และคนที่เลื่อนขึ้นไปอ่านข้อความเก่าจะถูกดีดลงล่างตลอด — จึงเก็บสภาพเดิมไว้ก่อน
+  const same = (chatDrawnId === chatOpenId);
+  const sc0 = document.getElementById('chatScroll');
+  const ta0 = document.getElementById('chatInput');
+  const keepTop = sc0 ? sc0.scrollTop : 0;
+  // อยู่ท้ายห้องอยู่แล้ว (หรือเพิ่งเปิดห้อง) → เลื่อนตามข้อความใหม่ ไม่งั้นอยู่ที่เดิม
+  const atEnd = !same || !sc0 || (sc0.scrollHeight - sc0.scrollTop - sc0.clientHeight) < 80;
+  const keepTa = (same && ta0)
+    ? {v:ta0.value, s:ta0.selectionStart, e:ta0.selectionEnd, focus:document.activeElement===ta0}
+    : null;
   // เปิดห้องอยู่ = อ่านแล้ว (กระดิ่งของ User คนนี้หายไป)
   if(c && r && canSeeRecord(r) && markChatSeen(c)) saveChats();
   updateChatBadge();
   if(c && r && canSeeRecord(r)){
     wrap.innerHTML = chatRoomHTML(c, r);
     const sc = document.getElementById('chatScroll');
-    if(sc) sc.scrollTop = sc.scrollHeight;
+    if(sc) sc.scrollTop = atEnd ? sc.scrollHeight : keepTop;
+    const ta = document.getElementById('chatInput');
+    if(ta && keepTa){
+      ta.value = keepTa.v;
+      if(keepTa.focus){ ta.focus(); try{ ta.setSelectionRange(keepTa.s, keepTa.e); }catch(e){} }
+    }
+    chatDrawnId = chatOpenId;
   } else {
     chatOpenId = null;
+    chatDrawnId = null;
     wrap.innerHTML = chatListHTML();
   }
 }
@@ -5076,7 +5109,8 @@ function sendChatMsg(){
   const ta = document.getElementById('chatInput');
   const text = (ta.value||'').trim();
   if(!text) { ta.focus(); return; }
-  c.messages.push({type:'msg', user:currentUser, text, ts:Date.now()});
+  ta.value = '';            // ล้างทันทีที่กดส่ง
+  c.messages.push({type:'msg', user:currentUser, text, ts:nowTs()});
   logAct('chat','ส่งข้อความ', text.length>160 ? text.slice(0,160)+'…' : text, c.jobId);
   touchChatPart(c, currentUser, true);
   saveChats();
@@ -5111,7 +5145,7 @@ function approveOn(jobId, key){
   const c = getChat(jobId);
   if(!c) return;
   const part = CHAT_PARTS.find(p=>p.key===key);
-  c.approvals[key] = {by: currentUser, at: new Date().toLocaleString('th-TH'), ts: Date.now()};
+  c.approvals[key] = {by: currentUser, at: new Date().toLocaleString('th-TH'), ts: nowTs()};
   logAct('approve','อนุมัติ '+part.label, 'ครบ '+CHAT_PARTS.filter(p=>c.approvals[p.key]).length+'/'+NPARTS+' ฝ่าย', jobId);
   pushSys(c, `${currentUser} อนุมัติ ${part.label} ✓`);
   if(CHAT_PARTS.every(p=>c.approvals[p.key]))
@@ -5953,6 +5987,13 @@ let sbCap = {seq:true, msg:true, apv:true};
 let sbSnap = {records:{}, chats:{}, users:{}, acts:{}, msgs:{}, apvs:{}, counter:null};
 let sbWM = {rec:'', cht:'', usr:'', msg:'', apv:'', act:0};   // watermark สำหรับดึงเฉพาะที่เปลี่ยน
 let sbIdPool = [];          // เลขงานที่จองไว้ล่วงหน้าจากเซิร์ฟเวอร์
+let sbPendMsg = [];         // ข้อความที่ยังหาห้องไม่เจอ รอลองใหม่รอบหน้า
+const SB_LAG_MS = 15000;    // ถอย watermark กลับไป 15 วิ กันข้อความที่บันทึกพร้อมกันหลุด
+function sbWMBack(iso){
+  if(!iso) return '';
+  const t = Date.parse(iso);
+  return t ? new Date(t - SB_LAG_MS).toISOString() : iso;
+}
 
 async function sbReq(path, opt){
   const o = opt || {};
@@ -5971,6 +6012,10 @@ async function sbReq(path, opt){
     err.status = res.status;
     throw err;
   }
+  try{
+    const d = res.headers && res.headers.get && res.headers.get('Date');
+    if(d) sbNoteSkew(Date.parse(d));
+  }catch(e){}
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
 }
@@ -6053,7 +6098,7 @@ function sbTopUpIdPool(){ sbFillIdPool().catch(function(){}); }
 async function sbPull(full){
   const q = (table, sel, wm) => {
     let s = table + '?select=' + sel;
-    if(!full && sbWM[wm]) s += '&updated_at=gte.' + encodeURIComponent(sbWM[wm]);
+    if(!full && sbWM[wm]) s += '&updated_at=gte.' + encodeURIComponent(sbWMBack(sbWM[wm]));
     return sbReq(s);
   };
   const [rec, cht, usr] = await Promise.all([
@@ -6064,7 +6109,7 @@ async function sbPull(full){
   const msg = await sbTry('msg', ()=>q('fs_messages','uid,job_id,ts,data,updated_at','msg'), null);
   const apv = await sbTry('apv', ()=>q('fs_approvals','job_id,part,data,updated_at','apv'), null);
   let actQ = 'fs_activities?select=uid,ts,data&order=ts.desc&limit=' + ACT_MAX;
-  if(!full && sbWM.act) actQ += '&ts=gt.' + sbWM.act;
+  if(!full && sbWM.act) actQ += '&ts=gt.' + Math.max(0, sbWM.act - SB_LAG_MS);
   const act = await sbReq(actQ);
   const met = full ? await sbReq('fs_meta?select=key,value') : null;
 
@@ -6091,10 +6136,14 @@ async function sbPull(full){
 
 // ---------- ประกอบห้องแชทจากข้อมูลเซิร์ฟเวอร์ ----------
 // ระหว่างย้ายรูปแบบ: ห้องที่ยังไม่มีข้อความในตารางใหม่ ให้ใช้ข้อความที่ฝังมากับห้อง (ของเดิม)
-function sbBuildChat(row, msgRows, apvRows){
+function sbBuildChat(row, msgRows, apvRows, local){
   const d = row.data || {};
   const c = {jobId: row.job_id || d.jobId, createdAt: d.createdAt, createdBy: d.createdBy,
-             parts: d.parts || [], messages: [], approvals: {}};
+             parts: [], messages: [], approvals: {}};
+  // สถานะ "อ่านแล้ว" เป็นของเครื่องนี้ ไม่ได้ขึ้นเซิร์ฟเวอร์ — ถ้าไม่ยกมา กระดิ่งจะเด้งใหม่ทุกนาที
+  if(local && local.seen) c.seen = local.seen;
+  mergeParts(c, local && local.parts);
+  mergeParts(c, d.parts);
   if(msgRows && msgRows.length) c.messages = msgRows.slice().sort((a,b)=>(a.ts||0)-(b.ts||0)).map(r=>r.data);
   else if(d.messages && d.messages.length) c.messages = d.messages;
   if(apvRows && apvRows.length) apvRows.forEach(r=>{ c.approvals[r.part] = r.data; });
@@ -6119,6 +6168,21 @@ function mergeChatPayload(c, src){
     if(a && !c.approvals[p.key]){ c.approvals[p.key] = a; changed = true; }
   });
   return changed;
+}
+// รวมรายชื่อผู้ร่วมสนทนา — เอาค่าที่มากกว่าเสมอ
+// สองคนคุยกันอยู่ ต่างฝ่ายต่างส่ง parts ของตัวเองขึ้นไป ถ้าเขียนทับ สถิติของอีกฝ่ายจะหาย
+function mergeParts(c, srcParts){
+  c.parts = c.parts || [];
+  (srcParts||[]).forEach(sp=>{
+    if(!sp || !sp.name) return;
+    const p = c.parts.find(x=>x.name===sp.name);
+    if(!p){ c.parts.push(Object.assign({}, sp)); return; }
+    if(sp.firstAt && (!p.firstAt || sp.firstAt < p.firstAt)) p.firstAt = sp.firstAt;
+    p.lastAt   = Math.max(p.lastAt||0, sp.lastAt||0);
+    p.msgs     = Math.max(p.msgs||0, sp.msgs||0);
+    p.activeMs = Math.max(p.activeMs||0, sp.activeMs||0);
+  });
+  return c.parts;
 }
 function sbGroup(rows, key){
   const m = {};
@@ -6148,11 +6212,16 @@ function sbApply(d){
 }
 
 function sbApplyFull(d){
+  sbPendMsg = [];
   const msgBy = d.msg ? sbGroup(d.msg, 'job_id') : null;
   const apvBy = d.apv ? sbGroup(d.apv, 'job_id') : null;
   const srvRec = {}, srvCht = {}, srvUsr = {}, srvAct = {};
   d.rec.forEach(r=>{ srvRec[r.id] = r.data; });
-  d.cht.forEach(r=>{ const c = sbBuildChat(r, msgBy && msgBy[r.job_id], apvBy && apvBy[r.job_id]); srvCht[c.jobId] = c; });
+  d.cht.forEach(r=>{
+    const loc = chats.find(x=>x.jobId===(r.job_id || (r.data&&r.data.jobId)));
+    const c = sbBuildChat(r, msgBy && msgBy[r.job_id], apvBy && apvBy[r.job_id], loc);
+    srvCht[c.jobId] = c;
+  });
   d.usr.forEach(r=>{ srvUsr[r.data && r.data.name || r.name] = r.data; });
   d.act.forEach(r=>{ srvAct[r.uid || actUid(r.data)] = r.data; });
 
@@ -6200,15 +6269,19 @@ function sbApplyDelta(d){
     let c = chats.find(x=>x.jobId===id);
     if(!c){ c = {jobId:id, createdAt:meta.createdAt, createdBy:meta.createdBy, parts:meta.parts||[], messages:meta.messages||[], approvals:meta.approvals||{}}; chats.push(c); }
     else {
-      c.createdAt = meta.createdAt || c.createdAt; c.createdBy = meta.createdBy || c.createdBy; c.parts = meta.parts || c.parts;
+      c.createdAt = meta.createdAt || c.createdAt; c.createdBy = meta.createdBy || c.createdBy; mergeParts(c, meta.parts);
       // ข้อความที่ฝังมากับแถวห้อง (เซิร์ฟเวอร์รูปแบบเดิม) ต้องรวมเข้ามา ไม่ใช่มองข้าม
       mergeChatPayload(c, meta);
     }
     sbSnap.chats[id] = JSON.stringify(r.data);
   });
-  (d.msg||[]).forEach(r=>{
+  // ข้อความที่ห้องยังมาไม่ถึงเครื่องนี้ ห้ามทิ้ง — เก็บไว้ลองใหม่รอบหน้า
+  // (ถ้าทิ้ง watermark จะเลยไปแล้ว ข้อความนั้นจะหายจนกว่าจะถึงรอบดึงข้อมูลทั้งหมด)
+  const pend = sbPendMsg.concat(d.msg || []);
+  sbPendMsg = [];
+  pend.forEach(r=>{
     const c = chats.find(x=>x.jobId===r.job_id);
-    if(!c) return;
+    if(!c){ if(sbPendMsg.length < 2000) sbPendMsg.push(r); return; }
     if(!(c.messages||[]).some(m=>msgUid(c.jobId,m)===r.uid)) c.messages.push(r.data);
     sbSnap.msgs[r.uid] = 1;
   });
@@ -6376,8 +6449,11 @@ function sbQueue(){
 
 // ---------- รอบการซิงก์: ส่งขึ้น แล้วดึงลง ----------
 let sbCycleRunning = false;
+let sbCycleAgain = false;   // มีของใหม่เข้ามาระหว่างรอบที่กำลังวิ่งอยู่
 async function sbCycle(){
-  if(!sbOn() || sbCycleRunning) return;
+  if(!sbOn()) return;
+  // เดิม: รอบซ้อนกันแล้วทิ้งไปเลย ทำให้ข้อความที่เพิ่งกดส่งต้องรอรอบถัดไป
+  if(sbCycleRunning){ sbCycleAgain = true; return; }
   sbCycleRunning = true; sbBusy = true; sbChip();
   try{
     await sbPush();
@@ -6390,6 +6466,7 @@ async function sbCycle(){
     console.warn('[sync]', sbErr);
   }finally{
     sbBusy = false; sbCycleRunning = false; sbChip();
+    if(sbCycleAgain){ sbCycleAgain = false; setTimeout(sbCycle, 0); }
   }
 }
 function sbManualSync(){ if(sbOn()){ sbErr=''; sbCycle(); } }
