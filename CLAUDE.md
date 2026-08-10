@@ -1,12 +1,30 @@
 # Formula Studio — กฎการแก้ไขโปรเจกต์
 
 เครื่องมือ R&D Briefing ของ Beyond Laboratory · ไฟล์เดียว `index.html` (HTML + CSS + JS วานิลลา ไม่มี build step)
-ข้อมูลทั้งหมดเก็บใน `localStorage` ของเบราว์เซอร์ผู้ใช้ — **ไม่มีเซิร์ฟเวอร์ ไม่มี migration script**
-นั่นคือเหตุผลของกฎข้อ 1 ด้านล่าง
+ข้อมูลเก็บใน `localStorage` เป็น local-first และอาจซิงก์กับ Supabase เมื่อเปิดใช้ server configuration
+
+ก่อนทำงานทุกครั้งต้องอ่าน `AGENTS.md` ก่อน ไฟล์นั้นกำหนด **กฎเหล็กอันดับ 1: GitHub-Centered Development & Runtime Governance** และมีลำดับเหนือกฎเฉพาะ Formula Studio ในไฟล์นี้
 
 ---
 
-## กฎข้อ 1 (สำคัญที่สุด) — ห้ามแก้ไขโครงสร้างข้อมูล
+## กฎเหล็กอันดับ 1 — GitHub-Centered Development & Runtime Governance
+
+> GitHub เป็น Source of Truth ของการเปลี่ยนแปลงระบบ · Codex เป็น Development Agent · Hermes เป็น Governance Monitor · Runtime Operator เป็นผู้ deploy approved release
+
+- ทำงานบน feature branch ผ่าน Pull Request และ independent review ตามระดับความเสี่ยง ห้าม direct push/force push ไป protected `main`
+- Codex ห้าม final approve งานตัวเอง ห้าม deploy production ห้ามเข้าถึง production secret/data ที่ไม่ mask และห้าม patch source ที่ runtime
+- Critical Change รวม auth/permission, Supabase/schema/sync, runtime/deployment, CI/CD, secret handling, backup/restore และ audit integrity
+- Critical Change ต้องขอ independent approval จาก CODEOWNER `@phossatron` หรือผู้ทดแทนที่ System Owner แต่งตั้งอย่างเป็นทางการ
+- ห้ามฝัง secret หรือ production/confidential data ลง repository, commit, PR, log หรือ prompt
+- Browser ใช้ได้เฉพาะ Supabase publishable/anon key ภายใต้ RLS และ least-privilege grants; ห้ามฝัง `service_role`, secret key หรือ privileged token
+- ทุกงานต้องรายงาน traceability, files changed, tests, impacts, rollback, risks และ PR reference ตาม contract ใน `AGENTS.md`
+- หากพบ scope conflict, forbidden path, secret หรือ production credential ให้หยุดด้วย `BLOCKED_GOVERNANCE` และแจ้ง System Owner
+
+รายละเอียดบังคับทั้งหมดอยู่ใน `AGENTS.md`; เอกสาร governance ฉบับเต็มเป็น `Internal Confidential` และห้ามคัดลอกเข้า public repository
+
+---
+
+## กฎเหล็กอันดับ 2 — ห้ามแก้ไขโครงสร้างข้อมูล
 
 > **ห้ามเปลี่ยน / เปลี่ยนชื่อ / ลบ key ของ localStorage, ชื่อฟิลด์ หรือชนิดข้อมูลของ object ที่ระบุไว้ในหัวข้อ "โครงสร้างข้อมูลที่ถูกล็อก" โดยเด็ดขาด**
 
@@ -24,7 +42,7 @@
 - ลบฟิลด์เดิมทิ้ง แม้จะเลิกใช้แล้ว (ให้หยุดแสดงผลแทน — ข้อมูลเก่ายังต้องอยู่ครบ)
 - เปลี่ยนรูปแบบรหัสงาน `A00001` (prefix ตัวอักษร A–Z + เลข 5 หลัก) หรือแก้ตัวนับ `fs_reccounter` ให้ย้อนกลับ
 - เขียนทับ / เคลียร์ store ใด ๆ ตอน load — โดยเฉพาะ **ห้ามเรียก `saveRecordsStore()` ก่อนที่ `loadRecords()` จะทำงานเสร็จ**
-  (เคยเกือบทำให้ records ทั้งหมดถูกเขียนทับด้วย array ว่างมาแล้ว — ดูกฎข้อ 3)
+  (เคยเกือบทำให้ records ทั้งหมดถูกเขียนทับด้วย array ว่างมาแล้ว — ดูกฎข้อ 4)
 
 ### ถ้าจำเป็นต้องเปลี่ยนจริง ๆ
 1. ถามเจ้าของโปรเจกต์ก่อนเสมอ ห้ามตัดสินใจเอง
@@ -46,6 +64,8 @@
 | `fs_activities` | array ของ activity log (ใหม่สุดอยู่หน้าสุด, จำกัด `ACT_MAX`) |
 | `fs_imp` | ชื่อผู้ที่กำลัง impersonate (string) |
 
+Optional state ที่เพิ่มแบบ backward compatible: `sessionStorage.fs_auth_session` เก็บ Auth session เฉพาะ tab/session และ `localStorage.fs_sync_snapshot` เก็บ server snapshot ที่ไม่มี token เพื่อ merge offline delta
+
 ### record (`fs_records[]`)
 ```
 id createdAt createdBy updatedAt updatedBy date metaDate
@@ -61,13 +81,13 @@ closed        // {by, at, ts} — มีเมื่อปิดงานแล�
 
 ### user (`fs_userlist[]`)
 ```
-{ name, role, email, pass }      // pass = pwHash() — ผู้ใช้เก่าที่ไม่มี pass ต้องล็อกอินได้ต่อไป
+{ name, role, email, pass }      // secure server: pass = null; local-only legacy: pwHash() ได้
 ```
 
 ### chat (`fs_chats[]`)
 ```
 { jobId, createdAt, createdBy, messages[], parts[], approvals:{pd, ra, rd} }
-messages[] = { type:'sys'|'msg', text, ts, ... }
+messages[] = { type:'sys'|'msg', user?, text, ts, ... }
 ```
 
 ### activity (`fs_activities[]`)
@@ -80,15 +100,16 @@ messages[] = { type:'sys'|'msg', text, ts, ... }
 ### เซิร์ฟเวอร์กลาง (Supabase) ก็ล็อกโครงสร้างเดียวกัน
 
 ตารางบนเซิร์ฟเวอร์เก็บ object รูปทรงเดิม**ทั้งก้อน**ไว้ในคอลัมน์ `data jsonb` — ไม่แตกฟิลด์เป็นคอลัมน์
-ดังนั้นเพิ่มฟิลด์ใหม่ในแอปได้โดยไม่ต้องแก้ฐานข้อมูล และกฎข้อ 1 ยังคุมทั้งสองฝั่งด้วยกติกาชุดเดียว
+ดังนั้นเพิ่มฟิลด์ใหม่ในแอปได้โดยไม่ต้องแก้ฐานข้อมูล และกฎข้อ 2 ยังคุมทั้งสองฝั่งด้วยกติกาชุดเดียว
 
 | ตาราง | คีย์ | มาจาก |
 |---|---|---|
 | `fs_records` | `id` | `records[]` |
 | `fs_chats` | `job_id` | `chats[]` |
 | `fs_users` | `name` | `userList[]` |
-| `fs_activities` | `seq` (+`ts`) | `activities[]` — append only |
+| `fs_activities` | `uid` (+`ts`) | `activities[]` — append only |
 | `fs_meta` | `key` | `reccounter` |
+| `fs_memberships` | `user_id` | Auth authorization แยกจาก locked JSON |
 
 ห้ามแตกฟิลด์ออกเป็นคอลัมน์จริง ห้ามเปลี่ยนชื่อตาราง/คีย์ ห้ามเก็บ `currentUser` / `impersonator` ขึ้นเซิร์ฟเวอร์
 (เป็นสถานะของเครื่องนั้น ๆ ไม่ใช่ข้อมูลร่วม) โครงสร้างเต็มอยู่ที่ `supabase/schema.sql`
@@ -97,29 +118,27 @@ messages[] = { type:'sys'|'msg', text, ts, ... }
 
 ## กฎข้ออื่น ๆ
 
-**2. ไฟล์เดียว** — งานทั้งหมดอยู่ใน `index.html` ห้ามแตกไฟล์ ห้ามเพิ่ม build step ห้ามเพิ่ม dependency ใหม่
-(ที่มีอยู่คือ SheetJS จาก CDN เท่านั้น)
+**3. ไฟล์เดียว** — งาน application ทั้งหมดอยู่ใน `index.html` ห้ามแตกไฟล์ ห้ามเพิ่ม build step ห้ามเพิ่ม dependency ใหม่
+(dependency ที่มีอยู่โหลดจาก CDN: SheetJS และชุดสร้าง PDF ที่โหลดเมื่อใช้งาน)
 
-**3. ห้ามเขียนทับข้อมูลตอน load** — ฟังก์ชัน migrate ต้องแยกกันตามชนิดข้อมูล และเรียกหลังจาก loader ของชนิดนั้นทำงานเสร็จแล้วเท่านั้น
+**4. ห้ามเขียนทับข้อมูลตอน load** — ฟังก์ชัน migrate ต้องแยกกันตามชนิดข้อมูล และเรียกหลังจาก loader ของชนิดนั้นทำงานเสร็จแล้วเท่านั้น
 (เช่น `migrateUserNames()` ใน `loadUsers()` ห้ามแตะ records — ต้องใช้ `migrateRecordOwners()` ที่เรียกหลัง `loadRecords()`)
 
-**4. Export Excel เพิ่มคอลัมน์ได้เฉพาะต่อท้าย** — ห้ามแทรกกลางหรือสลับลำดับ เพราะ index ของคอลัมน์ถูกอ้างอิงอยู่ทั้งขาเข้า (import) และเทสต์
+**5. Export Excel เพิ่มคอลัมน์ได้เฉพาะต่อท้าย** — ห้ามแทรกกลางหรือสลับลำดับ เพราะ index ของคอลัมน์ถูกอ้างอิงอยู่ทั้งขาเข้า (import) และเทสต์
 
-**5. escape ทุกค่าที่มาจากผู้ใช้** — ใช้ `esc()` ทุกครั้งที่ประกอบ HTML จาก template literal
+**6. escape ทุกค่าที่มาจากผู้ใช้** — ใช้ `esc()` ทุกครั้งที่ประกอบ HTML จาก template literal
 
-**6. รันเทสต์ก่อนส่งงานเสมอ** — `node harness.js` แล้วเปิด `test.html` ด้วย headless Chrome ต้องผ่าน 100% และ console ต้องไม่มี error
+**7. รันเทสต์ก่อนส่งงานเสมอ** — `node harness.js` และ `./tests/run-sql-tests.sh` ต้องผ่าน 100%; browser console ต้องไม่มี error
 ถ้าแก้อะไรแล้วเทสต์เดิมพัง ให้ตรวจก่อนว่าเป็น regression จริงหรือแค่ความคาดหวังเก่าที่ต้องอัปเดต
 
-**7. สิทธิ์ผู้ใช้ตรวจที่ `can()` / `requirePerm()` เสมอ** — ห้ามซ่อนปุ่มอย่างเดียวโดยไม่เช็คสิทธิ์ในฟังก์ชันที่ทำงานจริง
+**8. สิทธิ์ผู้ใช้ตรวจที่ `can()` / `requirePerm()` เสมอ** — ห้ามซ่อนปุ่มอย่างเดียวโดยไม่เช็คสิทธิ์ในฟังก์ชันที่ทำงานจริง
 เมนูที่จำกัด Role ต้องกัน 3 ชั้น: ซ่อนปุ่ม + กันตอนเปิดหน้า/ป๊อปอัพ + กันในฟังก์ชันที่ลงมือทำจริง
-สำหรับสิทธิ์ระดับ Admin ให้ตรวจ **Role ตัวจริง** (`impersonator ? findUser(impersonator).role : currentRole()`)
-ไม่ใช่ Role ที่กำลังสวมบทบาทอยู่
+Secure mode ต้องใช้ `authMembership.role` เป็น authority และปิด impersonation; local-only mode ที่สวมบทบาทให้ตรวจ Role ตัวจริงก่อนทำงานระดับ Admin
 
-**7.1 หน้า Login คุมทางเข้าเดียว** — `renderLoginView()` แสดงเมื่อ `currentUser` ว่าง และเรียกจาก `renderUserUI()` เท่านั้น
-ห้ามเพิ่มทางเข้าที่ตั้ง `currentUser` โดยไม่ผ่านการตรวจรหัสผ่าน และห้าม sync `currentUser` / `impersonator` ขึ้นเซิร์ฟเวอร์
+**8.1 หน้า Login คุมทางเข้าเดียว** — `renderLoginView()` แสดงเมื่อ `currentUser` ว่าง และเรียกจาก `renderUserUI()` เท่านั้น
+ห้ามเพิ่มทางเข้าที่ตั้ง `currentUser` โดยไม่ผ่าน Supabase Auth + active membership (หรือ legacy password เฉพาะ local-only mode) และห้าม sync `currentUser` / `impersonator` ขึ้นเซิร์ฟเวอร์
 ระหว่างที่ข้อมูลผู้ใช้ยังโหลดจากเซิร์ฟเวอร์ไม่เสร็จ ห้ามแสดงฟอร์มสร้าง Admin คนแรก (จะสร้างทับของเดิม)
 
-**8. รหัสผ่านในระบบนี้ไม่ใช่ระบบความปลอดภัยจริง** — `pwHash()` เป็นแค่การอำพรางฝั่ง client เก็บใน localStorage
-ห้ามนำไปใช้เก็บข้อมูลลับ และห้ามโฆษณาว่าปลอดภัย
+**9. `pwHash()` ใช้ได้เฉพาะ local-only compatibility** — เป็นแค่การอำพรางฝั่ง client ห้ามใช้เป็น authorization ของ server; secure mode ต้องใช้ Supabase Auth + RLS
 
-**9. อัปเดต build stamp บน header ทุกครั้งที่แก้** — ผู้ใช้ใช้ตัวนี้ยืนยันว่าได้เวอร์ชันใหม่แล้วหลัง hard refresh
+**10. อัปเดต build stamp บน header ทุกครั้งที่แก้ application** — ผู้ใช้ใช้ตัวนี้ยืนยันว่าได้เวอร์ชันใหม่แล้วหลัง hard refresh
