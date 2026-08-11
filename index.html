@@ -660,7 +660,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-11.9</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-12.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -5127,15 +5127,16 @@ function toggleChatJob(){ chatJobOpen = !chatJobOpen; renderChat(); }
 // งานที่ถูก Reject จะถูกเก็บเข้ากล่อง Reject ในหน้า Dashboard และหายจากเมนูซ้าย
 function rejectJobHTML(r){
   if(r.rejected){
+    // Reject เป็นขั้นสุดท้าย — ไม่มีทางยกเลิก งานนี้จบแล้ว
     return `<div class="ap-done ap-rej">Reject แล้ว · ${esc(r.rejected.at)}${r.rejected.by?' โดย '+esc(r.rejected.by):''}</div>
-      <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-bottom:6px" onclick="gotoRejectBox()">ดูในกล่อง Reject</button>
-      ${canReject(r) ? `<button class="btn btn-g btn-sm" style="width:100%;justify-content:center" onclick="unrejectJob('${r.id}')">ยกเลิก Reject</button>` : ''}`;
+      <button class="btn btn-s btn-sm" style="width:100%;justify-content:center" onclick="gotoRejectBox()">ดูในกล่อง Reject</button>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:8px">งานที่ Reject แล้วยกเลิกไม่ได้</div>`;
   }
   if(r.closed) return '';   // ปิดงานไปแล้ว ไม่ต้องมีปุ่ม Reject
   if(!canReject(r))
     return `<div style="font-size:11.5px;color:var(--muted);margin-top:10px">Reject ได้เฉพาะ Admin และ Sales เจ้าของงานนี้</div>`;
   return `<button class="btn btn-r btn-sm" style="width:100%;justify-content:center;margin-top:10px" onclick="rejectJob('${r.id}')">Reject งานนี้</button>
-    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">ตีงานกลับเมื่อข้อมูลไม่ถูกต้อง หรือลูกค้ายกเลิก</div>`;
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">ตีงานกลับเมื่อข้อมูลไม่ถูกต้อง หรือลูกค้ายกเลิก · กดแล้วยกเลิกไม่ได้</div>`;
 }
 function gotoRejectBox(){
   switchView('dash');
@@ -5150,9 +5151,9 @@ function rejectJob(id){
   if(!canReject(r)){ alert('Reject ได้เฉพาะ Admin และ Sales เจ้าของงานนี้'); return; }
   if(r.rejected) return;
   askConfirm('Reject งาน ' + r.id + '?',
-    ['งานจะถูกเก็บเข้ากล่อง Reject ในหน้า Dashboard',
-     'รหัสงานจะหายจากเมนูด้านซ้ายใต้ Chat Message',
-     'ยกเลิก Reject ได้ภายหลังจากป๊อปอัพรายละเอียดงาน'],
+    ['⚠ Reject แล้วยกเลิกไม่ได้ — งานนี้จะถือว่าจบ',
+     'งานจะถูกเก็บเข้ากล่อง Reject ในหน้า Dashboard',
+     'รหัสงานจะหายจากเมนูด้านซ้ายใต้ Chat Message'],
     'Reject งานนี้', ()=>doRejectJob(r), true);
 }
 function doRejectJob(r){
@@ -5165,29 +5166,9 @@ function doRejectJob(r){
   updateChatBadge();
   renderChat(); renderRecordsList();
 }
-function unrejectJob(id){
-  const r = records.find(x=>x.id===id);
-  if(!r || !r.rejected) return;
-  if(!canReject(r)){ alert('ยกเลิก Reject ได้เฉพาะ Admin และ Sales เจ้าของงานนี้'); return; }
-  askConfirm('ยกเลิก Reject ' + r.id + '?',
-    ['งานจะกลับมาอยู่ในรายการที่กำลังดำเนินการ',
-     'รหัสงานจะกลับเข้าเมนูด้านซ้ายใต้ Chat Message'],
-    'ยกเลิก Reject', ()=>doUnrejectJob(r));
-}
-function doUnrejectJob(r){
-  delete r.rejected;
-  logAct('close','ยกเลิก Reject', (r.brand||r.customer||''), r.id);
-  const idx = records.findIndex(x=>x.id===r.id);
-  if(idx>=0){ records[idx]=r; saveRecordsStore(); }
-  const c = getChat(r.id);
-  if(c){ pushSys(c, `${currentUser} ยกเลิก Reject — งานกลับมาดำเนินการต่อ`); touchChatPart(c, currentUser, false); saveChats(); }
-  updateChatBadge();
-  renderChat(); renderRecordsList();
-}
-
 // ---- ปิดงาน / เปิดงานใหม่ (Close job) ----
 function closeJobHTML(r){
-  if(r.rejected) return '';   // งานที่ถูก Reject ไว้ ต้องยกเลิก Reject ก่อนจึงจะปิดงานได้
+  if(r.rejected) return '';   // งานที่ถูก Reject แล้วถือว่าจบ ไม่ต้องมีปุ่มปิดงานอีก
   if(r.closed){
     return `<div class="ap-done" style="background:#F1F3F4;border-color:var(--bd);color:var(--tx)">ปิดงานแล้ว · ${esc(r.closed.at)}${r.closed.by?' โดย '+esc(r.closed.by):''}</div>
       <button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-bottom:6px" onclick="gotoCloseBox()">ดูในกล่อง Close job</button>
@@ -5210,7 +5191,7 @@ function closeJob(id){
   const r = records.find(x=>x.id===id);
   if(!r) return;
   if(!requirePerm('closeJob','ปิดงานได้เฉพาะ Role: Admin, Sales, OPC')) return;
-  if(r.rejected){ alert('งานนี้ถูก Reject อยู่ — ยกเลิก Reject ก่อนจึงจะปิดงานได้'); return; }
+  if(r.rejected){ alert('งานนี้ถูก Reject แล้ว — ปิดงานซ้ำไม่ได้'); return; }
   askConfirm('ปิดงาน ' + r.id + '?',
     ['งานจะถูกเก็บเข้ากล่อง Close job ในหน้า Dashboard',
      'รหัสงานจะหายจากเมนูด้านซ้ายใต้ Chat Message',
