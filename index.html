@@ -660,7 +660,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-13.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-13.2</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -5326,9 +5326,19 @@ const CHAT_XLS_HEAD = ['รหัสชุดข้อมูล','แบรน�
   'กลุ่มเป้าหมาย','เพศ','ราคา (บาท)','สรรพคุณ','ข้อจำกัด','หมายเหตุ','สร้างเมื่อ','ผู้สร้าง',
   'หมวดผลิตภัณฑ์','หมวดย่อย','ความสำคัญ','ลักษณะการจดแจ้ง อย.','สี','กลิ่น','รส',
   'การบรรจุ (บรรจุภัณฑ์)','กว้าง (ซม.)','ยาว (ซม.)',
-  'Sales ผู้รับผิดชอบ','เบอร์ติดต่อ'];
-const CHAT_ING_HEAD = ['#','ชื่อสาร','น้ำหนัก/หน่วย','แหล่งกำเนิด/Origin','ความเข้มข้น %','สารที่ได้จริง','อย.','หมายเหตุ'];
+  'Sales ผู้รับผิดชอบ','เบอร์ติดต่อ',
+  // ── ต่อท้ายเท่านั้น (กฎข้อ 4) ──
+  'จุดขาย','วันที่สร้าง (แบบเต็ม)','แก้ไขล่าสุด','ผู้แก้ไขล่าสุด',
+  'บันทึกหลังปรับสูตร','ผู้บันทึก','เวลาที่บันทึก',
+  'PD Pass','RA Pass','RD Pass','Sales Pass',
+  'สถานะงาน','ปิดงานเมื่อ','ปิดงานโดย','Reject เมื่อ','Reject โดย'];
+const CHAT_ING_HEAD = ['#','ชื่อสาร','น้ำหนัก/หน่วย','แหล่งกำเนิด/Origin','ความเข้มข้น %','สารที่ได้จริง','อย.','หมายเหตุ','สารหลัก'];
 const FDA_TEXT = {ok:'🟢 อนุมัติ', over:'🟡 เกินขีดจำกัด', not_approved:'🔴 ไม่อนุมัติ', unknown:'⚪ ไม่พบในฐานข้อมูล'};
+// ผู้อนุมัติ + เวลา ของแต่ละฝ่าย สำหรับใส่ในไฟล์ Export
+function apvText(c, key){
+  const a = c && c.approvals && c.approvals[key];
+  return a ? ((a.by||'-') + (a.at ? ' · ' + a.at : '')) : '';
+}
 
 async function exportChatExcel(jobId){
   const c = getChat(jobId);
@@ -5356,7 +5366,19 @@ async function exportChatExcel(jobId){
     r.packType||'',
     r.widthCm!==''&&r.widthCm!=null ? (Number(r.widthCm)||r.widthCm) : '',
     r.lengthCm!==''&&r.lengthCm!=null ? (Number(r.lengthCm)||r.lengthCm) : '',
-    r.salesOwner||'', r.phone||''
+    r.salesOwner||'', r.phone||'',
+    // ── ต่อท้ายเท่านั้น (กฎข้อ 4) ──
+    (r.allSP||[]).join(', '),
+    r.metaDate||'',
+    r.updatedAt ? new Date(r.updatedAt).toLocaleString('th-TH') : '',
+    r.updatedBy||'',
+    (r.modNote && r.modNote.text)||'',
+    (r.modNote && r.modNote.savedBy)||'',
+    (r.modNote && r.modNote.savedAt)||'',
+    apvText(c,'pd'), apvText(c,'ra'), apvText(c,'rd'), apvText(c,'sales'),
+    r.rejected ? 'Reject' : (r.closed ? 'ปิดงานแล้ว' : 'กำลังดำเนินการ'),
+    (r.closed && r.closed.at)||'', (r.closed && r.closed.by)||'',
+    (r.rejected && r.rejected.at)||'', (r.rejected && r.rejected.by)||''
   ];
   const wsData = XLSX.utils.aoa_to_sheet([CHAT_XLS_HEAD, dataRow]);
   wsData['!cols'] = CHAT_XLS_HEAD.map(h=>({wch: Math.min(46, Math.max(14, String(h).length+8))}));
@@ -5366,10 +5388,11 @@ async function exportChatExcel(jobId){
   const ing = [CHAT_ING_HEAD];
   (r.rows||[]).forEach((x,i)=>ing.push([
     i+1, x.name||'', Number(x.w)||0, x.o||'', Number(x.p)||0,
-    +Number(x.actual||0).toFixed(2), (x.fda && FDA_TEXT[x.fda.status]) || '', x.note||''
+    +Number(x.actual||0).toFixed(2), (x.fda && FDA_TEXT[x.fda.status]) || '', x.note||'',
+    x.hero ? 'ใช่' : ''   // ── ต่อท้ายเท่านั้น (กฎข้อ 4) ──
   ]));
   const wsIng = XLSX.utils.aoa_to_sheet(ing);
-  wsIng['!cols'] = [{wch:6},{wch:32},{wch:16},{wch:26},{wch:14},{wch:16},{wch:20},{wch:28}];
+  wsIng['!cols'] = [{wch:6},{wch:32},{wch:16},{wch:26},{wch:14},{wch:16},{wch:20},{wch:28},{wch:10}];
   XLSX.utils.book_append_sheet(wb, wsIng, 'สูตร ส่วนผสม');
 
   const brand = String(r.brand||'formula').replace(/[^\w฀-๿.-]+/g,'_');
