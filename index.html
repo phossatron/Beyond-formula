@@ -702,7 +702,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.5</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.6</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3089,7 +3089,7 @@ function saveUsers(){
 const TAG_MAX = 30;
 const TAG_COLORS = ['#1A73E8','#1E8E3E','#D93025','#E37400','#9334E6','#12B5CB',
                     '#F538A0','#5F6368','#0B8043','#C5221F','#A142F4','#F9AB00'];
-let tagList = [];   // [{id, name, color}]
+let tagList = [];   // [{id, name, color, by?}] — by = ชื่อผู้สร้าง (ฟิลด์ใหม่ optional)
 function loadTags(){
   try{ const v = JSON.parse(localStorage.getItem('fs_tags') || '[]'); tagList = Array.isArray(v) ? v : []; }
   catch(e){ tagList = []; }
@@ -3100,8 +3100,19 @@ function saveTags(){
   sbQueue();
 }
 function findTag(id){ return tagList.find(t=>t.id===id) || null; }
+// Role Sales เห็นเฉพาะ Tag ที่ตัวเองสร้าง — Role อื่นเห็นทุก Tag
+// Tag เก่าที่ไม่มีฟิลด์ by (สร้างก่อนมีกติกานี้) ถือเป็นของกลาง ทุกคนเห็นได้ (กฎข้อ 1)
+function tagVisible(t){
+  if(!t) return false;
+  if(!can('ownOnly')) return true;
+  if(!t.by) return true;
+  return t.by === currentUser;
+}
+function visibleTags(){ return tagList.filter(tagVisible); }
+// หานิยาม Tag เฉพาะอันที่ผู้ใช้คนนี้มีสิทธิ์เห็น — ใช้ก่อนติด/ถอด/ลบ
+function findVisTag(id){ const t = findTag(id); return tagVisible(t) ? t : null; }
 // Tag ของงานนี้ (ข้าม id ที่หานิยามไม่เจอ เช่น เพิ่งถูกลบ หรือยังซิงก์มาไม่ถึง)
-function recordTags(r){ return (((r||{}).tags)||[]).map(findTag).filter(Boolean); }
+function recordTags(r){ return (((r||{}).tags)||[]).map(findTag).filter(tagVisible); }
 function newTagId(){ return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 // removeFrom = รหัสงาน — ใส่มาเมื่อต้องการปุ่มถอด Tag ออกจากงานนั้น
 function tagChipHTML(t, extra, removeFrom){
@@ -3136,7 +3147,8 @@ function renderTagManager(){
   const box = document.getElementById('tagMgBody');
   if(!box) return;
   const full = tagList.length >= TAG_MAX;
-  const items = tagList.length ? tagList.map(t=>`
+  const vis = visibleTags();
+  const items = vis.length ? vis.map(t=>`
     <div class="tg-mg-item">
       ${tagChipHTML(t)}
       <span class="tg-count">${countJobsWithTag(t.id)} งาน</span>
@@ -3146,7 +3158,7 @@ function renderTagManager(){
   box.innerHTML = `
     <div style="max-height:280px;overflow-y:auto;margin-bottom:14px">${items}</div>
     <div class="fgrp">
-      <label class="flbl">สร้าง Tag ใหม่ <span class="tg-count">(${tagList.length}/${TAG_MAX})</span></label>
+      <label class="flbl">สร้าง Tag ใหม่ <span class="tg-count">(${vis.length}/${TAG_MAX})</span></label>
       <input class="fi" id="tagNewName" maxlength="24" placeholder="เช่น ด่วน, ลูกค้าใหม่, รอวัตถุดิบ"${full?' disabled':''}
         onkeydown="if(event.key==='Enter'){event.preventDefault();addTagFromForm();}">
     </div>
@@ -3157,9 +3169,11 @@ function renderTagManager(){
       <button class="btn btn-p btn-sm" onclick="addTagFromForm()"${full?' disabled':''}>เพิ่ม Tag</button>
       <button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button>
     </div>
-    ${full?'<div class="tg-none" style="margin-top:10px">ครบ '+TAG_MAX+' Tag แล้ว — ลบอันที่ไม่ใช้ก่อนจึงจะเพิ่มใหม่ได้</div>':''}`;
+    ${full?'<div class="tg-none" style="margin-top:10px">ครบ '+TAG_MAX+' Tag แล้วทั้งระบบ — ลบอันที่ไม่ใช้ก่อนจึงจะเพิ่มใหม่ได้</div>':''}
+    ${can('ownOnly')?'<div class="tg-none" style="margin-top:10px">Role Sales เห็นและใช้ได้เฉพาะ Tag ที่ตนเองสร้าง</div>':''}`;
 }
-function countJobsWithTag(id){ return records.filter(r=>(r.tags||[]).indexOf(id)>=0).length; }
+// นับเฉพาะงานที่ผู้ใช้คนนี้มองเห็น (Sales เห็นเฉพาะงานของตัวเอง)
+function countJobsWithTag(id){ return visibleRecords().filter(r=>(r.tags||[]).indexOf(id)>=0).length; }
 function pickTagColor(c){ _tagNewColor = c; renderTagManager(); }
 function addTagFromForm(){
   const el = document.getElementById('tagNewName');
@@ -3176,8 +3190,12 @@ function addTag(name, color){
   name = String(name||'').trim().slice(0,24);
   if(!name) return null;
   if(tagList.length >= TAG_MAX){ alert('สร้าง Tag ได้สูงสุด ' + TAG_MAX + ' อัน'); return null; }
-  if(tagList.some(t=>t.name===name)){ alert('มี Tag ชื่อนี้อยู่แล้ว'); return null; }
-  const t = {id:newTagId(), name, color: color || TAG_COLORS[0]};
+  const dup = tagList.find(t=>t.name===name);
+  if(dup){
+    alert(tagVisible(dup) ? 'มี Tag ชื่อนี้อยู่แล้ว' : 'ชื่อนี้ถูกใช้เป็น Tag ของผู้ใช้อื่นแล้ว — ตั้งชื่ออื่น');
+    return null;
+  }
+  const t = {id:newTagId(), name, color: color || TAG_COLORS[0], by: currentUser || ''};
   tagList.push(t);
   saveTags();
   logAct('job','สร้าง Tag', name, '');
@@ -3185,7 +3203,7 @@ function addTag(name, color){
   return t;
 }
 function askDeleteTag(id){
-  const t = findTag(id);
+  const t = findVisTag(id);
   if(!t) return;
   const n = countJobsWithTag(id);
   askConfirm('ลบ Tag ' + t.name + '?',
@@ -3195,7 +3213,7 @@ function askDeleteTag(id){
 }
 function deleteTag(id){
   if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT'); return; }
-  const t = findTag(id);
+  const t = findVisTag(id);   // Sales ลบได้เฉพาะ Tag ที่ตัวเองสร้าง
   if(!t) return;
   tagList = tagList.filter(x=>x.id!==id);
   saveTags();
@@ -3235,8 +3253,8 @@ function renderJobTagPicker(jobId){
   const on = r.tags || [];
   box.innerHTML = `
     <div class="tg-pick" id="jobTagPick">
-      ${tagList.length ? tagList.map(t=>tagChipHTML(t, on.indexOf(t.id)>=0?' on':'')).join('')
-        : '<div class="tg-none">ยังไม่มี Tag ในระบบ — กด "จัดการ Tag" เพื่อสร้างก่อน</div>'}
+      ${visibleTags().length ? visibleTags().map(t=>tagChipHTML(t, on.indexOf(t.id)>=0?' on':'')).join('')
+        : '<div class="tg-none">ยังไม่มี Tag ที่ใช้ได้ — กด "จัดการ Tag" เพื่อสร้างก่อน</div>'}
     </div>
     <div class="modal-acts" style="margin-top:18px">
       <button class="btn btn-g btn-sm" onclick="openTagManager()">จัดการ Tag</button>
@@ -3248,11 +3266,11 @@ function renderJobTagPicker(jobId){
 }
 function toggleJobTag(jobId, tagId){
   const r = records.find(x=>x.id===jobId);
-  if(!r || !findTag(tagId)) return;
+  const t = findVisTag(tagId);   // Sales ติด/ถอดได้เฉพาะ Tag ที่ตัวเองสร้าง
+  if(!r || !t) return;
   if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
   r.tags = r.tags || [];
   const i = r.tags.indexOf(tagId);
-  const t = findTag(tagId);
   if(i>=0) r.tags.splice(i,1); else r.tags.push(tagId);
   const idx = records.findIndex(x=>x.id===jobId);
   if(idx>=0) records[idx] = r;
@@ -4266,7 +4284,7 @@ function renderRecordsList(){
         <select class="fi role-select" id="recTag" onchange="applyTagFilter()">
           <option value="">ทุก Tag</option>
           <option value="__none__"${recTagFilter==='__none__'?' selected':''}>ยังไม่ติด Tag</option>
-          ${tagList.map(t=>`<option value="${esc(t.id)}"${t.id===recTagFilter?' selected':''}>${esc(t.name)} (${records.filter(x=>(x.tags||[]).indexOf(t.id)>=0).length})</option>`).join('')}
+          ${visibleTags().map(t=>`<option value="${esc(t.id)}"${t.id===recTagFilter?' selected':''}>${esc(t.name)} (${visibleRecords().filter(x=>(x.tags||[]).indexOf(t.id)>=0).length})</option>`).join('')}
         </select>
         ${canManageTags()?'<button class="btn btn-g btn-sm" onclick="openTagManager()">จัดการ Tag</button>':''}
       </div>
@@ -4332,7 +4350,7 @@ function clearRecSel(){ recSel = {}; renderRecordsList(); }
 // ติด/ถอด Tag ให้ทุกงานที่เลือกไว้
 function bulkTag(tagId, add){
   if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
-  const t = findTag(tagId);
+  const t = findVisTag(tagId);   // Sales ติด/ถอดได้เฉพาะ Tag ที่ตัวเองสร้าง
   const ids = selectedJobIds();
   if(!t || !ids.length) return;
   let n = 0;
@@ -4371,12 +4389,12 @@ function renderBulkTagBody(){
   const box = document.getElementById('bulkTagBody');
   if(!box) return;
   const ids = selectedJobIds();
-  const used = tagList.filter(t=>ids.some(id=>(((records.find(x=>x.id===id)||{}).tags)||[]).indexOf(t.id)>=0));
+  const used = visibleTags().filter(t=>ids.some(id=>(((records.find(x=>x.id===id)||{}).tags)||[]).indexOf(t.id)>=0));
   box.innerHTML = `
     <div class="tg-none" style="margin-bottom:12px">เลือกไว้ ${ids.length} งาน: ${esc(ids.join(', '))}</div>
     <div class="fgrp"><label class="flbl">ติด Tag ให้ทุกงานที่เลือก</label></div>
     <div class="tg-row" id="bulkAddRow">
-      ${tagList.length ? tagList.map(t=>tagChipHTML(t)).join('') : '<div class="tg-none">ยังไม่มี Tag ในระบบ</div>'}
+      ${visibleTags().length ? visibleTags().map(t=>tagChipHTML(t)).join('') : '<div class="tg-none">ยังไม่มี Tag ที่ใช้ได้</div>'}
     </div>
     <div class="fgrp" style="margin-top:16px"><label class="flbl">ถอด Tag ออกจากทุกงานที่เลือก</label></div>
     <div class="tg-row" id="bulkDelRow">
@@ -4403,8 +4421,10 @@ function applyTagFilter(){
   renderRecordsList();
 }
 function matchTagFilter(r){
+  // Tag ของคนอื่น (สำหรับ Sales) ไม่นับ — ถือว่างานนั้นยังไม่ติด Tag
+  if(recTagFilter && recTagFilter!=='__none__' && !findVisTag(recTagFilter)) recTagFilter = '';
   if(!recTagFilter) return true;
-  const tg = (r.tags||[]);
+  const tg = recordTags(r).map(t=>t.id);
   if(recTagFilter === '__none__') return tg.length === 0;
   return tg.indexOf(recTagFilter) >= 0;
 }
@@ -4963,7 +4983,7 @@ function renderChatMenu(){
   }
   const tagsOf = c => recordTags(records.find(x=>x.id===c.jobId));
   // Tag ที่มีงานอยู่จริงเท่านั้น (เรียงตามลำดับที่สร้าง Tag ไว้)
-  const used = tagList.filter(t=>list.some(c=>tagsOf(c).some(x=>x.id===t.id)));
+  const used = visibleTags().filter(t=>list.some(c=>tagsOf(c).some(x=>x.id===t.id)));
   if(!used.length){
     // ยังไม่มีงานไหนติด Tag → แสดงรายการรหัสงานแบบเดิม
     box.innerHTML = list.map(jobLinkHTML).join('');

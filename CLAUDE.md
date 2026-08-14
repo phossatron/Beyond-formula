@@ -45,7 +45,7 @@
 | `fs_chats` | array ของห้องแชท |
 | `fs_activities` | array ของ activity log (ใหม่สุดอยู่หน้าสุด, จำกัด `ACT_MAX`) |
 | `fs_imp` | ชื่อผู้ที่กำลัง impersonate (string) |
-| `fs_tags` | array ของนิยาม Tag `{id, name, color}` (สูงสุด 30) |
+| `fs_tags` | array ของนิยาม Tag `{id, name, color, by?}` (สูงสุด 30) · `by` = ชื่อผู้สร้าง (optional — Tag เก่าที่ไม่มีฟิลด์นี้ถือเป็นของกลาง ทุก Role เห็นได้) |
 
 ### record (`fs_records[]`)
 ```
