@@ -45,6 +45,7 @@
 | `fs_chats` | array ของห้องแชท |
 | `fs_activities` | array ของ activity log (ใหม่สุดอยู่หน้าสุด, จำกัด `ACT_MAX`) |
 | `fs_imp` | ชื่อผู้ที่กำลัง impersonate (string) |
+| `fs_tags` | array ของนิยาม Tag `{id, name, color}` (สูงสุด 30) |
 
 ### record (`fs_records[]`)
 ```
@@ -58,6 +59,7 @@ rows          // array ของสาร: {num, name, w, o, p, actual, note, he
 modNote       // {text, savedBy, savedAt}
 closed        // {by, at, ts} — มีเมื่อปิดงานแล้วเท่านั้น
 rejected      // {by, at, ts} — มีเมื่อถูก Reject เท่านั้น · Reject แล้วยกเลิกไม่ได้ ห้ามเพิ่มทางลบฟิลด์นี้
+tags          // array ของ tag id (optional) — งานเก่าที่ไม่มีฟิลด์นี้ต้องทำงานได้ปกติ
 ```
 
 ### user (`fs_userlist[]`)
@@ -89,7 +91,7 @@ messages[] = { type:'sys'|'msg', text, ts, ... }
 | `fs_chats` | `job_id` | `chats[]` |
 | `fs_users` | `name` | `userList[]` |
 | `fs_activities` | `seq` (+`ts`) | `activities[]` — append only |
-| `fs_meta` | `key` | `reccounter` |
+| `fs_meta` | `key` | `reccounter` + นิยาม Tag ที่ key `tags` |
 
 ห้ามแตกฟิลด์ออกเป็นคอลัมน์จริง ห้ามเปลี่ยนชื่อตาราง/คีย์ ห้ามเก็บ `currentUser` / `impersonator` ขึ้นเซิร์ฟเวอร์
 (เป็นสถานะของเครื่องนั้น ๆ ไม่ใช่ข้อมูลร่วม) โครงสร้างเต็มอยู่ที่ `supabase/schema.sql`

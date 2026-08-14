@@ -69,6 +69,25 @@ body{font-family:'Noto Sans Thai','Roboto','Google Sans',Arial,'Segoe UI',sans-s
 .side-own{font-family:'Noto Sans Thai',sans-serif;font-size:11.5px;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:74px}
 .side-link.unread .side-own{color:var(--tx)}
 .side-ap.full{background:#E6F4EA;color:var(--gr)}
+/* Tag ของงาน — จุดสีเล็ก ๆ ต่อท้ายรหัสงานในเมนูซ้าย */
+.side-tags{display:inline-flex;align-items:center;gap:3px;flex-shrink:0}
+.side-tag{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.12) inset}
+.side-tag-more{font-size:10px;color:var(--muted);font-family:'Noto Sans Thai',sans-serif}
+/* ป้าย Tag แบบเต็ม (มีชื่อ) */
+.tg-chip{display:inline-flex;align-items:center;gap:5px;border-radius:12px;padding:2px 10px;font-size:11.5px;font-weight:500;line-height:1.7;white-space:nowrap;font-family:'Noto Sans Thai',sans-serif}
+.tg-chip .tg-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
+.tg-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tg-none{font-size:11.5px;color:var(--muted)}
+.tg-pick{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.tg-pick .tg-chip{cursor:pointer;border:1px solid transparent;opacity:.45;transition:.15s}
+.tg-pick .tg-chip.on{opacity:1;border-color:currentColor}
+.tg-pick .tg-chip:hover{opacity:.85}
+.tg-mg-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.tg-mg-item:last-child{border-bottom:none}
+.tg-sw{display:flex;flex-wrap:wrap;gap:6px}
+.tg-sw button{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+.tg-sw button.on{border-color:var(--tx);transform:scale(1.12)}
+.tg-count{font-size:11.5px;color:var(--muted)}
 .side-empty{font-size:12px;color:var(--muted);padding:6px 12px}
 /* CHECKLIST */
 .chk-grp{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:16px 20px;margin-bottom:12px}
@@ -660,7 +679,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.2</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3042,6 +3061,181 @@ function saveUsers(){
   // currentUser / impersonator เป็นสถานะของเครื่องนี้เท่านั้น ไม่ส่งขึ้นเซิร์ฟเวอร์
   sbQueue();
 }
+// ---------- Tag ของงาน ----------
+// เก็บนิยาม Tag แยกจาก record — ตัว record เก็บแค่รายการ id (ฟิลด์ใหม่ tags เป็น optional)
+const TAG_MAX = 30;
+const TAG_COLORS = ['#1A73E8','#1E8E3E','#D93025','#E37400','#9334E6','#12B5CB',
+                    '#F538A0','#5F6368','#0B8043','#C5221F','#A142F4','#F9AB00'];
+let tagList = [];   // [{id, name, color}]
+function loadTags(){
+  try{ const v = JSON.parse(localStorage.getItem('fs_tags') || '[]'); tagList = Array.isArray(v) ? v : []; }
+  catch(e){ tagList = []; }
+  tagList = tagList.filter(t=>t && t.id).slice(0, TAG_MAX);
+}
+function saveTags(){
+  try{ localStorage.setItem('fs_tags', JSON.stringify(tagList)); }catch(e){}
+  sbQueue();
+}
+function findTag(id){ return tagList.find(t=>t.id===id) || null; }
+// Tag ของงานนี้ (ข้าม id ที่หานิยามไม่เจอ เช่น เพิ่งถูกลบ หรือยังซิงก์มาไม่ถึง)
+function recordTags(r){ return (((r||{}).tags)||[]).map(findTag).filter(Boolean); }
+function newTagId(){ return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function tagChipHTML(t, extra){
+  return `<span class="tg-chip${extra||''}" style="color:${esc(t.color)};background:${esc(t.color)}1F" data-tag="${esc(t.id)}">
+    <span class="tg-dot"></span>${esc(t.name)}</span>`;
+}
+
+// สิทธิ์: คนที่สร้าง/แก้ชุดข้อมูลได้ (Admin, Sales, OPC, MKT) จัดการ Tag ได้
+function canManageTags(){ return !!currentUser && can('createData'); }
+
+let _tagNewColor = TAG_COLORS[0];
+// ---------- ป๊อปอัพจัดการ Tag ----------
+function openTagManager(){
+  if(!requirePerm('createData','จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  _tagNewColor = _tagNewColor || TAG_COLORS[0];
+  showGModal(`
+    <div class="modal-hd">
+      <div>
+        <div class="modal-t">จัดการ Tag</div>
+        <div class="modal-desc">ตั้งชื่อกลุ่มงานและเลือกสี · ใช้ติดกับรหัสงานได้หลาย Tag ต่อ 1 งาน</div>
+      </div>
+      <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
+    </div>
+    <div id="tagMgBody"></div>`);
+  renderTagManager();
+}
+function renderTagManager(){
+  const box = document.getElementById('tagMgBody');
+  if(!box) return;
+  const full = tagList.length >= TAG_MAX;
+  const items = tagList.length ? tagList.map(t=>`
+    <div class="tg-mg-item">
+      ${tagChipHTML(t)}
+      <span class="tg-count">${countJobsWithTag(t.id)} งาน</span>
+      <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="askDeleteTag('${esc(t.id)}')">ลบ</button>
+    </div>`).join('')
+    : '<div class="tg-none" style="padding:10px 0">ยังไม่มี Tag — สร้างอันแรกได้ด้านล่าง</div>';
+  box.innerHTML = `
+    <div style="max-height:280px;overflow-y:auto;margin-bottom:14px">${items}</div>
+    <div class="fgrp">
+      <label class="flbl">สร้าง Tag ใหม่ <span class="tg-count">(${tagList.length}/${TAG_MAX})</span></label>
+      <input class="fi" id="tagNewName" maxlength="24" placeholder="เช่น ด่วน, ลูกค้าใหม่, รอวัตถุดิบ"${full?' disabled':''}
+        onkeydown="if(event.key==='Enter'){event.preventDefault();addTagFromForm();}">
+    </div>
+    <div class="tg-sw" style="margin:10px 0 16px">
+      ${TAG_COLORS.map(c=>`<button title="${esc(c)}" class="${c===_tagNewColor?'on':''}" style="background:${esc(c)}" onclick="pickTagColor('${esc(c)}')"></button>`).join('')}
+    </div>
+    <div class="modal-acts">
+      <button class="btn btn-p btn-sm" onclick="addTagFromForm()"${full?' disabled':''}>เพิ่ม Tag</button>
+      <button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button>
+    </div>
+    ${full?'<div class="tg-none" style="margin-top:10px">ครบ '+TAG_MAX+' Tag แล้ว — ลบอันที่ไม่ใช้ก่อนจึงจะเพิ่มใหม่ได้</div>':''}`;
+}
+function countJobsWithTag(id){ return records.filter(r=>(r.tags||[]).indexOf(id)>=0).length; }
+function pickTagColor(c){ _tagNewColor = c; renderTagManager(); }
+function addTagFromForm(){
+  const el = document.getElementById('tagNewName');
+  if(!el) return;
+  const name = (el.value||'').trim();
+  if(!name){ el.focus(); return; }
+  addTag(name, _tagNewColor);
+  renderTagManager();
+  const el2 = document.getElementById('tagNewName');
+  if(el2) el2.focus();
+}
+function addTag(name, color){
+  if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT'); return null; }
+  name = String(name||'').trim().slice(0,24);
+  if(!name) return null;
+  if(tagList.length >= TAG_MAX){ alert('สร้าง Tag ได้สูงสุด ' + TAG_MAX + ' อัน'); return null; }
+  if(tagList.some(t=>t.name===name)){ alert('มี Tag ชื่อนี้อยู่แล้ว'); return null; }
+  const t = {id:newTagId(), name, color: color || TAG_COLORS[0]};
+  tagList.push(t);
+  saveTags();
+  logAct('job','สร้าง Tag', name, '');
+  renderRecordsList();
+  return t;
+}
+function askDeleteTag(id){
+  const t = findTag(id);
+  if(!t) return;
+  const n = countJobsWithTag(id);
+  askConfirm('ลบ Tag ' + t.name + '?',
+    n ? ['Tag นี้ติดอยู่กับงาน ' + n + ' รายการ — จะถูกถอดออกจากงานเหล่านั้นด้วย', 'ตัวงานและข้อมูลอื่นไม่ถูกลบ'] 
+      : ['ยังไม่มีงานไหนใช้ Tag นี้'],
+    'ลบ Tag', ()=>deleteTag(id), true);
+}
+function deleteTag(id){
+  if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT'); return; }
+  const t = findTag(id);
+  if(!t) return;
+  tagList = tagList.filter(x=>x.id!==id);
+  saveTags();
+  // ถอด Tag ออกจากงานที่ติดไว้ ไม่ให้เหลือ id ที่ไม่มีนิยาม
+  let touched = 0;
+  records.forEach(r=>{
+    if((r.tags||[]).indexOf(id)>=0){ r.tags = r.tags.filter(x=>x!==id); touched++; }
+  });
+  if(touched) saveRecordsStore();
+  if(recTagFilter===id) recTagFilter='';
+  logAct('job','ลบ Tag', t.name + (touched?' · ถอดออกจากงาน '+touched+' รายการ':''), '');
+  renderTagManager();
+  updateChatBadge();
+  renderRecordsList();
+}
+
+// ---------- ติด Tag ให้รหัสงาน ----------
+function openJobTags(jobId){
+  const r = records.find(x=>x.id===jobId);
+  if(!r) return;
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  showGModal(`
+    <div class="modal-hd">
+      <div>
+        <div class="modal-t">Tag ของงาน ${esc(jobId)}</div>
+        <div class="modal-desc">กดเลือก/ยกเลิกได้หลายอัน</div>
+      </div>
+      <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
+    </div>
+    <div id="jobTagBody"></div>`);
+  renderJobTagPicker(jobId);
+}
+function renderJobTagPicker(jobId){
+  const box = document.getElementById('jobTagBody');
+  const r = records.find(x=>x.id===jobId);
+  if(!box || !r) return;
+  const on = r.tags || [];
+  box.innerHTML = `
+    <div class="tg-pick" id="jobTagPick">
+      ${tagList.length ? tagList.map(t=>tagChipHTML(t, on.indexOf(t.id)>=0?' on':'')).join('')
+        : '<div class="tg-none">ยังไม่มี Tag ในระบบ — กด "จัดการ Tag" เพื่อสร้างก่อน</div>'}
+    </div>
+    <div class="modal-acts" style="margin-top:18px">
+      <button class="btn btn-g btn-sm" onclick="openTagManager()">จัดการ Tag</button>
+      <button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button>
+    </div>`;
+  Array.from(box.querySelectorAll('.tg-chip')).forEach(el=>{
+    el.onclick = ()=>toggleJobTag(jobId, el.getAttribute('data-tag'));
+  });
+}
+function toggleJobTag(jobId, tagId){
+  const r = records.find(x=>x.id===jobId);
+  if(!r || !findTag(tagId)) return;
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  r.tags = r.tags || [];
+  const i = r.tags.indexOf(tagId);
+  const t = findTag(tagId);
+  if(i>=0) r.tags.splice(i,1); else r.tags.push(tagId);
+  const idx = records.findIndex(x=>x.id===jobId);
+  if(idx>=0) records[idx] = r;
+  saveRecordsStore();
+  logAct('job', i>=0 ? 'ถอด Tag' : 'ติด Tag', t.name, jobId);
+  renderJobTagPicker(jobId);
+  updateChatBadge();      // เมนูซ้ายต้องอัพเดตทันที
+  renderRecordsList();
+  if(document.getElementById('chatView').classList.contains('on')) renderChat();
+}
+
 // ---------- Sales ผู้รับผิดชอบ ----------
 const SALES_OWNERS = ['01.Ham','04.Sales แกง','05.Sales ฝน','06.Sales ล๊อต','07.Sales พี่เจี๊ยบ',
   '12.Sales พี่บ๊อบ','14.Sales ไวท์','15.Sales แยม','21.Sales ไท','22.Sales เอ้','23.MKT แหม่ม'];
@@ -3984,12 +4178,13 @@ function renderRecordsList(){
   const nRej = mine.filter(r=>r.rejected).length;
   const filtered = mine.filter(r=>{
     const day = ymd(r.createdAt);
-    return (!recFromStr || day>=recFromStr) && (!recToStr || day<=recToStr) && matchStatFilter(r);
+    return (!recFromStr || day>=recFromStr) && (!recToStr || day<=recToStr) && matchStatFilter(r) && matchTagFilter(r);
   });
 
   const body = filtered.length ? filtered.map(r=>`
     <tr class="${r.rejected ? 'row-rej' : (isFullyApproved(r) ? 'row-done' : '')}">
-      <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button></td>
+      <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button>
+        ${recordTags(r).length?`<div class="tg-row" style="margin-top:4px">${recordTags(r).map(t=>tagChipHTML(t)).join('')}</div>`:''}</td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
       <td>${esc(r.form||'-')}</td>
@@ -4028,6 +4223,13 @@ function renderRecordsList(){
         <button class="btn btn-s btn-sm" onclick="quickFilter('7d')">7 วัน</button>
         <button class="btn btn-s btn-sm" onclick="quickFilter('month')">เดือนนี้</button>
         <button class="btn btn-g btn-sm" onclick="quickFilter('all')">ทั้งหมด</button>
+        <span class="rec-fl-lbl">Tag</span>
+        <select class="fi role-select" id="recTag" onchange="applyTagFilter()">
+          <option value="">ทุก Tag</option>
+          <option value="__none__"${recTagFilter==='__none__'?' selected':''}>ยังไม่ติด Tag</option>
+          ${tagList.map(t=>`<option value="${esc(t.id)}"${t.id===recTagFilter?' selected':''}>${esc(t.name)} (${records.filter(x=>(x.tags||[]).indexOf(t.id)>=0).length})</option>`).join('')}
+        </select>
+        ${canManageTags()?'<button class="btn btn-g btn-sm" onclick="openTagManager()">จัดการ Tag</button>':''}
       </div>
       <div class="rec-wrap">
         <table class="rec-tbl">
@@ -4069,6 +4271,18 @@ const STAT_ICONS = {
 
 const STAT_LABEL = {all:'ทั้งหมด', wait:'รออนุมัติ', done:'อนุมัติแล้ว', exp:'Export', close:'Close job', reject:'Reject'};
 let statFilter = '';   // '' = ทั้งหมด · 'wait' | 'done' | 'exp'
+let recTagFilter = '';   // '' = ทุก Tag · '__none__' = งานที่ยังไม่ติด Tag · หรือ id ของ Tag
+function applyTagFilter(){
+  const el = document.getElementById('recTag');
+  recTagFilter = el ? el.value : '';
+  renderRecordsList();
+}
+function matchTagFilter(r){
+  if(!recTagFilter) return true;
+  const tg = (r.tags||[]);
+  if(recTagFilter === '__none__') return tg.length === 0;
+  return tg.indexOf(recTagFilter) >= 0;
+}
 
 function statCard(kind, num, label, sub){
   const on = (kind==='all') ? !statFilter : (statFilter===kind);
@@ -4583,10 +4797,18 @@ function renderChatMenu(){
     const un = chatUnread(c);
     const nm = r ? (r.brand || r.customer || '') : '';
     const owner = shortSalesName(r && r.salesOwner);
-    const tip = c.jobId + (nm?' — '+nm:'') + (owner?' · Sales '+owner:'') + ' · อนุมัติ ' + done + '/' + NPARTS + (un?' · มีอัพเดทใหม่':'');
+    const tg = recordTags(r);
+    const tip = c.jobId + (nm?' — '+nm:'') + (owner?' · Sales '+owner:'') + ' · อนุมัติ ' + done + '/' + NPARTS
+      + (tg.length?' · Tag: '+tg.map(t=>t.name).join(', '):'') + (un?' · มีอัพเดทใหม่':'');
+    // จุดสีของ Tag ต่อท้ายรหัสงาน (เกิน 3 อันแสดงเป็น +N)
+    const tagDots = tg.length ? `<span class="side-tags">
+        ${tg.slice(0,3).map(t=>`<span class="side-tag" style="background:${esc(t.color)}"></span>`).join('')}
+        ${tg.length>3?`<span class="side-tag-more">+${tg.length-3}</span>`:''}
+      </span>` : '';
     return `<button class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip)}">
       <span class="side-bell${un?'':' off'}">🔔</span>
       <span>${esc(c.jobId)}</span>
+      ${tagDots}
       ${owner?`<span class="side-own">${esc(owner)}</span>`:''}
       <span class="side-ap${done===NPARTS?' full':''}">${done}/${NPARTS}</span>
     </button>`;
@@ -5032,6 +5254,10 @@ function chatRoomHTML(c, r){
           ${exportBlock}
         </div>
         <div class="chat-panel">
+          <div class="chat-panel-t">Tag</div>
+          ${jobTagPanelHTML(r)}
+        </div>
+        <div class="chat-panel">
           <div class="chat-panel-t">สถานะงาน</div>
           ${closeJobHTML(r)}
           ${rejectJobHTML(r)}
@@ -5132,6 +5358,18 @@ function chatIngDel(jobId, i){
 }
 
 function toggleChatJob(){ chatJobOpen = !chatJobOpen; renderChat(); }
+
+// กล่อง Tag ในห้องแชท — แสดง Tag ที่ติดอยู่ + ปุ่มแก้ไข
+function jobTagPanelHTML(r){
+  const tg = recordTags(r);
+  const chips = tg.length
+    ? `<div class="tg-row">${tg.map(t=>tagChipHTML(t)).join('')}</div>`
+    : '<div class="tg-none">ยังไม่ได้ติด Tag</div>';
+  const btn = canManageTags()
+    ? `<button class="btn btn-s btn-sm" style="width:100%;justify-content:center;margin-top:10px" onclick="openJobTags('${r.id}')">เลือก Tag</button>`
+    : '';
+  return chips + btn;
+}
 
 // ---- Reject งาน (Sales เจ้าของงาน / Admin) ----
 // งานที่ถูก Reject จะถูกเก็บเข้ากล่อง Reject ในหน้า Dashboard และหายจากเมนูซ้าย
@@ -6164,8 +6402,8 @@ let sbCap = {seq:true, msg:true, apv:true};
 // สิ่งที่รู้ว่าอยู่บนเซิร์ฟเวอร์แล้ว ใช้หาว่าอะไรเปลี่ยน / อะไรถูกลบ
 // สำคัญ: อัปเดตจาก "สิ่งที่ push สำเร็จ" และ "สิ่งที่ pull ลงมา" เท่านั้น
 // ห้ามสร้างจากข้อมูลในเครื่องตรง ๆ ไม่งั้นของที่เพิ่งสร้างระหว่างรอบซิงก์จะถูกมองว่าส่งแล้ว
-let sbSnap = {records:{}, chats:{}, users:{}, acts:{}, msgs:{}, apvs:{}, counter:null};
-let sbWM = {rec:'', cht:'', usr:'', msg:'', apv:'', act:0};   // watermark สำหรับดึงเฉพาะที่เปลี่ยน
+let sbSnap = {records:{}, chats:{}, users:{}, acts:{}, msgs:{}, apvs:{}, counter:null, tags:null};
+let sbWM = {rec:'', cht:'', usr:'', msg:'', apv:'', met:'', act:0};   // watermark สำหรับดึงเฉพาะที่เปลี่ยน
 let sbIdPool = [];          // เลขงานที่จองไว้ล่วงหน้าจากเซิร์ฟเวอร์
 let sbPendMsg = [];         // ข้อความที่ยังหาห้องไม่เจอ รอลองใหม่รอบหน้า
 const SB_LAG_MS = 15000;    // ถอย watermark กลับไป 15 วิ กันข้อความที่บันทึกพร้อมกันหลุด
@@ -6301,7 +6539,10 @@ async function sbPull(full){
   let actQ = 'fs_activities?select=uid,ts,data&order=ts.desc&limit=' + ACT_MAX;
   if(!full && sbWM.act) actQ += '&ts=gt.' + Math.max(0, sbWM.act - SB_LAG_MS);
   const act = await sbReq(actQ);
-  const met = full ? await sbReq('fs_meta?select=key,value') : null;
+  // fs_meta เก็บทั้งตัวนับเลขงานและนิยาม Tag — ตัวเล็กมาก ดึงทุกรอบได้
+  let metQ = 'fs_meta?select=key,value,updated_at';
+  if(!full && sbWM.met) metQ += '&updated_at=gte.' + encodeURIComponent(sbWMBack(sbWM.met));
+  const met = await sbReq(metQ);
 
   const maxAt = (rows) => {
     let m = '';
@@ -6313,13 +6554,15 @@ async function sbPull(full){
   if(maxAt(usr)) sbWM.usr = maxAt(usr);
   if(maxAt(msg)) sbWM.msg = maxAt(msg);
   if(maxAt(apv)) sbWM.apv = maxAt(apv);
+  if(maxAt(met)) sbWM.met = maxAt(met);
   (act||[]).forEach(r=>{ if((r.ts||0) > sbWM.act) sbWM.act = r.ts||0; });
 
   return {
     full: !!full,
     rec: rec||[], cht: cht||[], usr: usr||[], act: act||[],
     msg: msg, apv: apv,
-    counter: met ? (function(){ const m = met.find(x=>x.key==='reccounter'); return m ? Number(m.value)||0 : null; })() : null,
+    counter: (function(){ const m = (met||[]).find(x=>x.key==='reccounter'); return m ? Number(m.value)||0 : null; })(),
+    tags: (function(){ const m = (met||[]).find(x=>x.key==='tags'); return m && Array.isArray(m.value) ? m.value : null; })(),
     empty: !!full && !(rec||[]).length && !(cht||[]).length && !(usr||[]).length && !(act||[]).length
   };
 }
@@ -6392,6 +6635,7 @@ function sbApply(d){
     activities.sort((a,b)=>(b.ts||0)-(a.ts||0));
     if(activities.length > ACT_MAX) activities.length = ACT_MAX;
     if(d.counter!=null && d.counter > recCounter) recCounter = d.counter;
+    applyServerTags(d.tags);
     syncRecCounter();
     // เก็บสำเนาไว้ในเครื่องด้วย เผื่อเน็ตหลุดจะยังเปิดดูข้อมูลล่าสุดได้
     saveRecordsStore(); saveChats(); saveActivities(); saveUsers();
@@ -6401,6 +6645,21 @@ function sbApply(d){
   return true;
 }
 
+// นิยาม Tag จากเซิร์ฟเวอร์
+// ครั้งแรกที่ยังไม่เคยซิงก์ ให้รวมของในเครื่องเข้าไปด้วย (ไม่ให้ Tag ที่เพิ่งสร้างหาย)
+// หลังจากนั้นถือว่าเซิร์ฟเวอร์เป็นตัวจริง เพื่อให้การลบ Tag มีผลกับทุกเครื่อง
+function applyServerTags(srv){
+  if(!srv) return;
+  let next = srv.filter(t=>t && t.id).slice(0, TAG_MAX);
+  if(sbSnap.tags == null){
+    tagList.forEach(t=>{ if(t && t.id && !next.some(x=>x.id===t.id) && next.length < TAG_MAX) next.push(t); });
+  }
+  sbSnap.tags = stableStr(next);
+  if(stableStr(tagList) !== sbSnap.tags){
+    tagList = next;
+    try{ localStorage.setItem('fs_tags', JSON.stringify(tagList)); }catch(e){}
+  }
+}
 function sbApplyFull(d){
   sbPendMsg = [];
   const msgBy = d.msg ? sbGroup(d.msg, 'job_id') : null;
@@ -6439,7 +6698,7 @@ function sbApplyFull(d){
   if(nu.length) userList = nu;
 
   // ทุกอย่างที่เซิร์ฟเวอร์มี ถือว่าซิงก์แล้ว
-  sbSnap = {records:{}, chats:{}, users:{}, acts:{}, msgs:{}, apvs:{}, counter:recCounter};
+  sbSnap = {records:{}, chats:{}, users:{}, acts:{}, msgs:{}, apvs:{}, counter:recCounter, tags:sbSnap.tags};
   d.rec.forEach(r=>{ sbSnap.records[r.id] = stableStr(r.data); });
   d.cht.forEach(r=>{ sbSnap.chats[r.job_id] = stableStr(r.data); });
   d.usr.forEach(r=>{ sbSnap.users[(r.data&&r.data.name)||r.name] = stableStr(r.data); });
@@ -6551,9 +6810,10 @@ async function sbPush(){
   const chtDel = Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
   const usrDel = Object.keys(sbSnap.users).filter(k=>!seenU[k]);
   const counterUp = !sbCap.seq && sbSnap.counter !== recCounter;
+  const tagsUp = sbSnap.tags !== stableStr(tagList);
 
   if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length && !msgUp.length
-     && !apvUp.length && !apvDel.length && !recDel.length && !chtDel.length && !usrDel.length && !counterUp) return false;
+     && !apvUp.length && !apvDel.length && !recDel.length && !chtDel.length && !usrDel.length && !counterUp && !tagsUp) return false;
 
   await sbUpsert('fs_records', recUp);
   recUp.forEach(x=>{ sbSnap.records[x.id] = stableStr(x.data); });
@@ -6605,6 +6865,10 @@ async function sbPush(){
   if(counterUp){
     await sbUpsert('fs_meta', [{key:'reccounter', value:recCounter}]);
     sbSnap.counter = recCounter;
+  }
+  if(tagsUp){
+    await sbUpsert('fs_meta', [{key:'tags', value:tagList}]);
+    sbSnap.tags = stableStr(tagList);
   }
   sbLastPush = Date.now();
   return true;
@@ -6713,6 +6977,7 @@ async function sbBoot(){
 setInterval(actMidnightCheck, 60000);
 
 // Init activity log + user system (login state from localStorage)
+loadTags();
 loadActivities();
 loadUsers();
 
@@ -6723,6 +6988,7 @@ window.addEventListener('storage', e=>{
   else if(e.key==='fs_chats') loadChats();
   else if(e.key==='fs_activities') loadActivities();
   else if(e.key==='fs_userlist') loadUsers();
+  else if(e.key==='fs_tags') loadTags();
   else return;
   updateChatBadge();
   renderRecordsList();
