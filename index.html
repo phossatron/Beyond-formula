@@ -358,11 +358,14 @@ select.fi.chat-picker{width:auto;height:36px;padding:0 12px;min-width:300px;max-
 .fgrp{display:flex;flex-direction:column;gap:6px}
 .flbl{font-size:12px;font-weight:500;color:var(--muted)}
 .flbl em{color:var(--muted);font-style:normal;font-weight:400;font-size:12px;margin-left:4px}
+.flbl em.hint-err{color:var(--re);font-weight:500}
 input.fi,select.fi,textarea.fi{background:var(--card);border:1px solid var(--bd);border-radius:4px;padding:9px 12px;color:var(--tx);font-size:14px;font-family:inherit;transition:.15s;width:100%}
 input.fi,select.fi{height:40px}
 input.fi:hover,select.fi:hover,textarea.fi:hover{border-color:var(--muted)}
 input.fi:focus,select.fi:focus,textarea.fi:focus{outline:none;border-color:var(--or);box-shadow:inset 0 0 0 1px var(--or)}
 input.fi::placeholder,textarea.fi::placeholder{color:#9AA0A6}
+/* ช่องที่ยังกรอกไม่ครบตอนกดสร้างชุดข้อมูล */
+input.fi.fi-err,select.fi.fi-err{border-color:var(--re);box-shadow:inset 0 0 0 1px var(--re)}
 textarea.fi{resize:vertical;min-height:80px;line-height:1.55}
 select.fi option{background:var(--card)}
 /* TAGS */
@@ -705,7 +708,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.7</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.8</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -824,7 +827,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
       </div>
       <div class="fgrp">
         <label class="flbl">ประเทศปลายทาง <em id="countryHint"></em></label>
-        <input class="fi" id="f_country" placeholder="เลือก Oversea ก่อนจึงระบุประเทศได้" disabled>
+        <input class="fi" id="f_country" placeholder="เลือก Oversea ก่อนจึงระบุประเทศได้" oninput="clearCountryErr()" disabled>
       </div>
     </div>
   </div>
@@ -2473,6 +2476,20 @@ function syncCountryField(){
   c.placeholder = over ? 'เช่น กัมพูชา, ลาว, เวียดนาม' : 'เลือก Oversea ก่อนจึงระบุประเทศได้';
   if(!over) c.value = '';   // กลับไป Domestic แล้วไม่ค้างชื่อประเทศเดิมไว้
   if(hint) hint.textContent = over ? '(จำเป็น)' : '';
+  clearCountryErr();
+}
+// ล้างสัญญาณเตือน "ยังไม่ได้ระบุประเทศ" ทันทีที่ผู้ใช้แก้ไข
+function clearCountryErr(){
+  const c = document.getElementById('f_country');
+  if(c) c.classList.remove('fi-err');
+  const hint = document.getElementById('countryHint');
+  const m = document.getElementById('f_market');
+  if(hint){
+    hint.classList.remove('hint-err');
+    hint.textContent = (m && m.value === 'Oversea') ? '(จำเป็น)' : '';
+  }
+  const e = document.getElementById('gen_err');
+  if(e && e.textContent.indexOf('ประเทศปลายทาง')>=0) e.textContent = '';
 }
 
 // ========== GENERATE DASHBOARD ==========
@@ -2486,7 +2503,20 @@ function generateDash() {
     document.getElementById('gen_err').textContent='กรุณากรอกชื่อลูกค้าหรือแบรนด์';
     return;
   }
+  // เลือก Oversea แล้วต้องระบุประเทศปลายทางเสมอ จึงจะสร้างชุดข้อมูลได้
+  if(document.getElementById('f_market').value === 'Oversea'
+     && !document.getElementById('f_country').value.trim()){
+    document.getElementById('gen_err').textContent='เลือก Oversea แล้วต้องระบุประเทศปลายทางด้วย';
+    const cel = document.getElementById('f_country');
+    cel.classList.add('fi-err');
+    const chint = document.getElementById('countryHint');
+    if(chint){ chint.textContent = '(จำเป็น — ยังไม่ได้ระบุ)'; chint.classList.add('hint-err'); }
+    cel.scrollIntoView({block:'center', behavior:'auto'});
+    cel.focus();
+    return;
+  }
   document.getElementById('gen_err').textContent='';
+  document.getElementById('f_country').classList.remove('fi-err');
 
   const form = document.getElementById('f_form').value;
   const size = document.getElementById('f_size').value.trim();
