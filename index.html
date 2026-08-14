@@ -73,11 +73,34 @@ body{font-family:'Noto Sans Thai','Roboto','Google Sans',Arial,'Segoe UI',sans-s
 .side-tags{display:inline-flex;align-items:center;gap:3px;flex-shrink:0}
 .side-tag{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 0 1px rgba(0,0,0,.12) inset}
 .side-tag-more{font-size:10px;color:var(--muted);font-family:'Noto Sans Thai',sans-serif}
+/* กลุ่ม Tag ใต้เมนู Chat Message — กดที่หัวข้อเพื่อกาง/พับรายการรหัสงาน */
+.side-grp-h{display:flex;align-items:center;gap:7px;width:100%;padding:7px 14px 7px 12px;background:none;border:none;
+  cursor:pointer;font-family:'Noto Sans Thai',sans-serif;font-size:12px;font-weight:500;color:var(--muted);text-align:left;transition:.15s}
+.side-grp-h:hover{background:var(--card2);color:var(--tx)}
+.side-grp-x{display:inline-block;width:9px;font-size:9px;line-height:1;transition:transform .15s;flex-shrink:0}
+.side-grp-h.open .side-grp-x{transform:rotate(90deg)}
+.side-grp-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side-grp-c{margin-left:auto;font-size:10.5px;color:var(--muted);background:var(--card2);border-radius:9px;padding:0 6px;flex-shrink:0}
+.side-grp{padding-left:12px}
+.side-grp .side-link.chat-job{padding-left:10px}
 /* ป้าย Tag แบบเต็ม (มีชื่อ) */
 .tg-chip{display:inline-flex;align-items:center;gap:5px;border-radius:12px;padding:2px 10px;font-size:11.5px;font-weight:500;line-height:1.7;white-space:nowrap;font-family:'Noto Sans Thai',sans-serif}
 .tg-chip .tg-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
 .tg-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tg-none{font-size:11.5px;color:var(--muted)}
+/* ถอด Tag ได้จากหน้า Dashboard — กากบาทบนป้าย */
+.tg-x{background:none;border:none;padding:0 0 0 2px;margin:0;cursor:pointer;color:inherit;opacity:.55;
+  font-size:13px;line-height:1;font-family:inherit}
+.tg-x:hover{opacity:1}
+.tg-add{background:none;border:1px dashed var(--bd);border-radius:12px;padding:1px 9px;font-size:11.5px;
+  color:var(--muted);cursor:pointer;font-family:'Noto Sans Thai',sans-serif;line-height:1.7}
+.tg-add:hover{border-color:var(--or);color:var(--or)}
+/* เลือกหลายงานพร้อมกันในหน้า Dashboard */
+.rec-ck{width:16px;height:16px;cursor:pointer;accent-color:var(--or);margin:0}
+.rec-ck-cell{width:34px;text-align:center}
+.bulk-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--tint);border:1px solid #C6DAFC;
+  border-radius:8px;padding:10px 14px;margin-bottom:12px}
+.bulk-n{font-size:13px;font-weight:500;color:var(--ontint)}
 .tg-pick{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
 .tg-pick .tg-chip{cursor:pointer;border:1px solid transparent;opacity:.45;transition:.15s}
 .tg-pick .tg-chip.on{opacity:1;border-color:currentColor}
@@ -679,7 +702,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.2</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.5</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3080,9 +3103,14 @@ function findTag(id){ return tagList.find(t=>t.id===id) || null; }
 // Tag ของงานนี้ (ข้าม id ที่หานิยามไม่เจอ เช่น เพิ่งถูกลบ หรือยังซิงก์มาไม่ถึง)
 function recordTags(r){ return (((r||{}).tags)||[]).map(findTag).filter(Boolean); }
 function newTagId(){ return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
-function tagChipHTML(t, extra){
+// removeFrom = รหัสงาน — ใส่มาเมื่อต้องการปุ่มถอด Tag ออกจากงานนั้น
+function tagChipHTML(t, extra, removeFrom){
+  const x = (removeFrom && canManageTags())
+    ? `<button class="tg-x" title="ถอด Tag ${esc(t.name)} ออกจาก ${esc(removeFrom)}"
+        onclick="event.stopPropagation();toggleJobTag('${esc(removeFrom)}','${esc(t.id)}')">×</button>`
+    : '';
   return `<span class="tg-chip${extra||''}" style="color:${esc(t.color)};background:${esc(t.color)}1F" data-tag="${esc(t.id)}">
-    <span class="tg-dot"></span>${esc(t.name)}</span>`;
+    <span class="tg-dot"></span>${esc(t.name)}${x}</span>`;
 }
 
 // สิทธิ์: คนที่สร้าง/แก้ชุดข้อมูลได้ (Admin, Sales, OPC, MKT) จัดการ Tag ได้
@@ -4181,10 +4209,21 @@ function renderRecordsList(){
     return (!recFromStr || day>=recFromStr) && (!recToStr || day<=recToStr) && matchStatFilter(r) && matchTagFilter(r);
   });
 
+  _bulkIds = filtered.map(r=>r.id);
+  const ckOn = canManageTags();
+  // ล้างการเลือกของงานที่ไม่อยู่ในรายการแล้ว (เช่น ถูกกรองออก/ถูกลบ)
+  Object.keys(recSel).forEach(id=>{ if(!records.some(r=>r.id===id)) delete recSel[id]; });
+  const nSel = selectedJobIds().length;
+  const allOn = ckOn && _bulkIds.length>0 && _bulkIds.every(id=>recSel[id]);
   const body = filtered.length ? filtered.map(r=>`
     <tr class="${r.rejected ? 'row-rej' : (isFullyApproved(r) ? 'row-done' : '')}">
+      ${ckOn?`<td class="rec-ck-cell"><input type="checkbox" class="rec-ck" data-job="${r.id}"
+        ${recSel[r.id]?'checked':''} onclick="toggleRecSel('${r.id}', this.checked)" title="เลือกงานนี้"></td>`:''}
       <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button>
-        ${recordTags(r).length?`<div class="tg-row" style="margin-top:4px">${recordTags(r).map(t=>tagChipHTML(t)).join('')}</div>`:''}</td>
+        ${(recordTags(r).length || canManageTags()) ? `<div class="tg-row" style="margin-top:4px">
+          ${recordTags(r).map(t=>tagChipHTML(t, '', r.id)).join('')}
+          ${canManageTags()?`<button class="tg-add" title="เลือก Tag ของ ${esc(r.id)}" onclick="openJobTags('${r.id}')">+ Tag</button>`:''}
+        </div>` : ''}</td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
       <td>${esc(r.form||'-')}</td>
@@ -4205,7 +4244,7 @@ function renderRecordsList(){
         ${jobDelBtnHTML(r)}
       </td>
     </tr>`).join('')
-    : `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px">ไม่พบรายการตามตัวกรองที่เลือก</td></tr>`;
+    : `<tr><td colspan="${ckOn?11:10}" style="text-align:center;color:var(--muted);padding:16px">ไม่พบรายการตามตัวกรองที่เลือก</td></tr>`;
 
   panel.innerHTML = `
     <div class="dbc">
@@ -4231,9 +4270,17 @@ function renderRecordsList(){
         </select>
         ${canManageTags()?'<button class="btn btn-g btn-sm" onclick="openTagManager()">จัดการ Tag</button>':''}
       </div>
+      ${nSel?`<div class="bulk-bar">
+        <span class="bulk-n">เลือกไว้ ${nSel} งาน</span>
+        <button class="btn btn-p btn-sm" onclick="openBulkTags()">ติด / ถอด Tag</button>
+        <button class="btn btn-g btn-sm" onclick="clearRecSel()">ล้างการเลือก</button>
+      </div>`:''}
       <div class="rec-wrap">
         <table class="rec-tbl">
-          <thead><tr><th>รหัส</th><th>แบรนด์</th><th>ลูกค้า</th><th>รูปแบบ</th><th>#สาร</th><th>วันที่สร้าง</th><th>ผู้สร้าง</th><th>Chat</th><th>สถานะ</th><th></th></tr></thead>
+          <thead><tr>
+            ${ckOn?`<th class="rec-ck-cell"><input type="checkbox" class="rec-ck" id="recCkAll"${allOn?' checked':''}
+              onclick="toggleRecSelAll(this.checked)" title="เลือกทั้งหมดที่แสดงอยู่"></th>`:''}
+            <th>รหัส</th><th>แบรนด์</th><th>ลูกค้า</th><th>รูปแบบ</th><th>#สาร</th><th>วันที่สร้าง</th><th>ผู้สร้าง</th><th>Chat</th><th>สถานะ</th><th></th></tr></thead>
           <tbody>${body}</tbody>
         </table>
       </div>
@@ -4272,6 +4319,84 @@ const STAT_ICONS = {
 const STAT_LABEL = {all:'ทั้งหมด', wait:'รออนุมัติ', done:'อนุมัติแล้ว', exp:'Export', close:'Close job', reject:'Reject'};
 let statFilter = '';   // '' = ทั้งหมด · 'wait' | 'done' | 'exp'
 let recTagFilter = '';   // '' = ทุก Tag · '__none__' = งานที่ยังไม่ติด Tag · หรือ id ของ Tag
+// งานที่ติ๊กเลือกไว้ในตาราง Dashboard (สำหรับติด/ถอด Tag ทีละหลายงาน)
+let recSel = {};
+let _bulkIds = [];   // รหัสงานที่แสดงอยู่ตอนนี้ ใช้ตอนกด "เลือกทั้งหมด"
+function selectedJobIds(){ return Object.keys(recSel).filter(id=>recSel[id]); }
+function toggleRecSel(id, on){ if(on) recSel[id] = true; else delete recSel[id]; renderRecordsList(); }
+function toggleRecSelAll(on){
+  _bulkIds.forEach(id=>{ if(on) recSel[id] = true; else delete recSel[id]; });
+  renderRecordsList();
+}
+function clearRecSel(){ recSel = {}; renderRecordsList(); }
+// ติด/ถอด Tag ให้ทุกงานที่เลือกไว้
+function bulkTag(tagId, add){
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  const t = findTag(tagId);
+  const ids = selectedJobIds();
+  if(!t || !ids.length) return;
+  let n = 0;
+  ids.forEach(id=>{
+    const r = records.find(x=>x.id===id);
+    if(!r) return;
+    r.tags = r.tags || [];
+    const i = r.tags.indexOf(tagId);
+    if(add && i<0){ r.tags.push(tagId); n++; }
+    else if(!add && i>=0){ r.tags.splice(i,1); n++; }
+  });
+  if(n){
+    saveRecordsStore();
+    logAct('job', add ? 'ติด Tag หลายงาน' : 'ถอด Tag หลายงาน', t.name + ' · ' + n + ' งาน', '');
+  }
+  updateChatBadge();
+  renderRecordsList();
+  renderBulkTagBody();
+  if(document.getElementById('chatView').classList.contains('on')) renderChat();
+}
+function openBulkTags(){
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  if(!selectedJobIds().length) return;
+  showGModal(`
+    <div class="modal-hd">
+      <div>
+        <div class="modal-t">Tag ของงานที่เลือก</div>
+        <div class="modal-desc">กดป้ายเพื่อติดหรือถอด Tag กับทุกงานที่ติ๊กไว้พร้อมกัน</div>
+      </div>
+      <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
+    </div>
+    <div id="bulkTagBody"></div>`);
+  renderBulkTagBody();
+}
+function renderBulkTagBody(){
+  const box = document.getElementById('bulkTagBody');
+  if(!box) return;
+  const ids = selectedJobIds();
+  const used = tagList.filter(t=>ids.some(id=>(((records.find(x=>x.id===id)||{}).tags)||[]).indexOf(t.id)>=0));
+  box.innerHTML = `
+    <div class="tg-none" style="margin-bottom:12px">เลือกไว้ ${ids.length} งาน: ${esc(ids.join(', '))}</div>
+    <div class="fgrp"><label class="flbl">ติด Tag ให้ทุกงานที่เลือก</label></div>
+    <div class="tg-row" id="bulkAddRow">
+      ${tagList.length ? tagList.map(t=>tagChipHTML(t)).join('') : '<div class="tg-none">ยังไม่มี Tag ในระบบ</div>'}
+    </div>
+    <div class="fgrp" style="margin-top:16px"><label class="flbl">ถอด Tag ออกจากทุกงานที่เลือก</label></div>
+    <div class="tg-row" id="bulkDelRow">
+      ${used.length ? used.map(t=>tagChipHTML(t)).join('') : '<div class="tg-none">งานที่เลือกยังไม่มี Tag ให้ถอด</div>'}
+    </div>
+    <div class="modal-acts" style="margin-top:18px">
+      <button class="btn btn-g btn-sm" onclick="openTagManager()">จัดการ Tag</button>
+      <button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button>
+    </div>`;
+  const bindRow = (rowId, add)=>{
+    const row = document.getElementById(rowId);
+    if(!row) return;
+    Array.from(row.querySelectorAll('.tg-chip')).forEach(el=>{
+      el.style.cursor = 'pointer';
+      el.onclick = ()=>bulkTag(el.getAttribute('data-tag'), add);
+    });
+  };
+  bindRow('bulkAddRow', true);
+  bindRow('bulkDelRow', false);
+}
 function applyTagFilter(){
   const el = document.getElementById('recTag');
   recTagFilter = el ? el.value : '';
@@ -4787,11 +4912,29 @@ function markChatSeen(c){
   c.seen[currentUser] = Math.max(nowTs(), chatLastTs(c));
   return true;
 }
+// กลุ่ม Tag ที่ถูกพับอยู่ (ค่าเริ่มต้น = กางทุกกลุ่ม จึงเก็บเฉพาะตัวที่ถูกพับ)
+let tagGroupShut = {};
+function toggleTagGroup(key){
+  tagGroupShut[key] = !tagGroupShut[key];
+  renderChatMenu();
+}
+function tagGroupOpen(key){ return !tagGroupShut[key]; }
+// หัวข้อกลุ่ม 1 บรรทัด — dot = จุดสี (กลุ่ม "ยังไม่ติด Tag" ไม่มีจุด)
+function tagGroupHeadHTML(key, name, count, dotColor){
+  const open = tagGroupOpen(key);
+  return `<button class="side-grp-h${open?' open':''}" onclick="toggleTagGroup('${esc(key)}')"
+      title="${esc(name)} · ${count} งาน — กดเพื่อ${open?'พับ':'กาง'}">
+    <span class="side-grp-x">▶</span>
+    ${dotColor?`<span class="side-tag" style="background:${esc(dotColor)}"></span>`:''}
+    <span class="side-grp-n">${esc(name)}</span>
+    <span class="side-grp-c">${count}</span>
+  </button>`;
+}
 function renderChatMenu(){
   const box = document.getElementById('chatJobLinks');
   if(!box) return;
   const list = openChats();
-  box.innerHTML = list.length ? list.map(c=>{
+  const jobLinkHTML = c=>{
     const r = records.find(x=>x.id===c.jobId);
     const done = CHAT_PARTS.filter(p=>c.approvals[p.key]).length;
     const un = chatUnread(c);
@@ -4812,7 +4955,34 @@ function renderChatMenu(){
       ${owner?`<span class="side-own">${esc(owner)}</span>`:''}
       <span class="side-ap${done===NPARTS?' full':''}">${done}/${NPARTS}</span>
     </button>`;
-  }).join('') : `<div class="side-empty">${visibleChats().length?'ปิดงานครบทุกรหัสแล้ว':'ยังไม่มีห้องแชท'}</div>`;
+  };
+
+  if(!list.length){
+    box.innerHTML = `<div class="side-empty">${visibleChats().length?'ปิดงานครบทุกรหัสแล้ว':'ยังไม่มีห้องแชท'}</div>`;
+    return;
+  }
+  const tagsOf = c => recordTags(records.find(x=>x.id===c.jobId));
+  // Tag ที่มีงานอยู่จริงเท่านั้น (เรียงตามลำดับที่สร้าง Tag ไว้)
+  const used = tagList.filter(t=>list.some(c=>tagsOf(c).some(x=>x.id===t.id)));
+  if(!used.length){
+    // ยังไม่มีงานไหนติด Tag → แสดงรายการรหัสงานแบบเดิม
+    box.innerHTML = list.map(jobLinkHTML).join('');
+    return;
+  }
+  // มี Tag → แสดง Tag ก่อน แล้วกางรหัสงานของแต่ละ Tag ลงมาด้านล่าง
+  // งานที่ติดหลาย Tag จะปรากฏใต้ทุก Tag ที่ติดไว้
+  const out = [];
+  used.forEach(t=>{
+    const inTag = list.filter(c=>tagsOf(c).some(x=>x.id===t.id));
+    out.push(tagGroupHeadHTML(t.id, t.name, inTag.length, t.color));
+    if(tagGroupOpen(t.id)) out.push(`<div class="side-grp">${inTag.map(jobLinkHTML).join('')}</div>`);
+  });
+  const noTag = list.filter(c=>!tagsOf(c).length);
+  if(noTag.length){
+    out.push(tagGroupHeadHTML('__none__', 'ยังไม่ติด Tag', noTag.length, ''));
+    if(tagGroupOpen('__none__')) out.push(`<div class="side-grp">${noTag.map(jobLinkHTML).join('')}</div>`);
+  }
+  box.innerHTML = out.join('');
 }
 
 function updateChatBadge(){
