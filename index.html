@@ -708,7 +708,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.8</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.9</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3151,6 +3151,25 @@ const TAG_MAX = 30;
 const TAG_COLORS = ['#1A73E8','#1E8E3E','#D93025','#E37400','#9334E6','#12B5CB',
                     '#F538A0','#5F6368','#0B8043','#C5221F','#A142F4','#F9AB00'];
 let tagList = [];   // [{id, name, color, by?}] — by = ชื่อผู้สร้าง (ฟิลด์ใหม่ optional)
+// Tag ขยะจากบั๊กชื่อฟังก์ชันชนกัน (สร้างจากการกด Enter ในช่องสรรพคุณ/ข้อจำกัด)
+const JUNK_TAG_NAMES = ['[object KeyboardEvent]','[object Event]','[object InputEvent]'];
+// เรียกหลัง loadRecords() เท่านั้น (กฎข้อ 3) · รันซ้ำได้ไม่พัง
+function cleanJunkTags(){
+  const junk = tagList.filter(t=>t && JUNK_TAG_NAMES.indexOf(t.name)>=0);
+  if(!junk.length) return 0;
+  const ids = junk.map(t=>t.id);
+  tagList = tagList.filter(t=>ids.indexOf(t.id)<0);
+  saveTags();
+  let touched = 0;
+  records.forEach(r=>{
+    if((r.tags||[]).some(id=>ids.indexOf(id)>=0)){
+      r.tags = r.tags.filter(id=>ids.indexOf(id)<0);
+      touched++;
+    }
+  });
+  if(touched) saveRecordsStore();
+  return junk.length;
+}
 function loadTags(){
   try{ const v = JSON.parse(localStorage.getItem('fs_tags') || '[]'); tagList = Array.isArray(v) ? v : []; }
   catch(e){ tagList = []; }
@@ -3255,14 +3274,17 @@ function addTagFromForm(){
   if(!el) return;
   const name = (el.value||'').trim();
   if(!name){ el.focus(); return; }
-  addTag(name, _tagNewColor);
+  createTag(name, _tagNewColor);
   renderTagManager();
   const el2 = document.getElementById('tagNewName');
   if(el2) el2.focus();
 }
-function addTag(name, color){
+// สร้าง Tag ของงาน — ห้ามตั้งชื่อ addTag ซ้ำกับตัวรับ Enter ของช่องสรรพคุณ/ข้อจำกัดอีก
+// (เคยชนกันมาแล้ว ทำให้พิมพ์สรรพคุณแล้ว Enter ไม่ขึ้นป้าย — ดู createTag/addTag)
+function createTag(name, color){
+  if(typeof name !== 'string'){ console.warn('[tag] createTag ต้องรับชื่อเป็นข้อความ'); return null; }
   if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT'); return null; }
-  name = String(name||'').trim().slice(0,24);
+  name = name.trim().slice(0,24);
   if(!name) return null;
   if(tagList.length >= TAG_MAX){ alert('สร้าง Tag ได้สูงสุด ' + TAG_MAX + ' อัน'); return null; }
   const dup = tagList.find(t=>t.name===name);
@@ -6916,6 +6938,7 @@ function sbApply(d){
     if(activities.length > ACT_MAX) activities.length = ACT_MAX;
     if(d.counter!=null && d.counter > recCounter) recCounter = d.counter;
     applyServerTags(d.tags);
+    cleanJunkTags();
     syncRecCounter();
     // เก็บสำเนาไว้ในเครื่องด้วย เผื่อเน็ตหลุดจะยังเปิดดูข้อมูลล่าสุดได้
     saveRecordsStore(); saveChats(); saveActivities(); saveUsers();
@@ -7279,6 +7302,7 @@ window.addEventListener('storage', e=>{
 renderSalesOwnerField();
 loadRecords();
 migrateRecordOwners();
+cleanJunkTags();          // ล้าง Tag ขยะจากบั๊กเก่า — ต้องอยู่หลัง loadRecords() เสมอ
 loadChats();
 updateChatBadge();
 renderRecordsList();
