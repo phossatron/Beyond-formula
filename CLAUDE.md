@@ -60,6 +60,8 @@ modNote       // {text, savedBy, savedAt}
 closed        // {by, at, ts} — มีเมื่อปิดงานแล้วเท่านั้น
 rejected      // {by, at, ts} — มีเมื่อถูก Reject เท่านั้น · Reject แล้วยกเลิกไม่ได้ ห้ามเพิ่มทางลบฟิลด์นี้
 tags          // array ของ tag id (optional) — งานเก่าที่ไม่มีฟิลด์นี้ต้องทำงานได้ปกติ
+market        // '' | 'Domestic' | 'Oversea' (optional) — ตลาดปลายทาง
+country       // string (optional) — ประเทศปลายทาง เก็บเฉพาะเมื่อ market === 'Oversea'
 ```
 
 ### user (`fs_userlist[]`)

@@ -14,7 +14,7 @@
   --or:#1A73E8;--or2:#1765CC;--navy:#F8F9FA;--card:#FFFFFF;--card2:#F1F3F4;
   --bd:#DADCE0;--tx:#202124;--muted:#5F6368;--ye:#B06000;--gr:#1E8E3E;
   --re:#D93025;--bl:#1A73E8;--pu:#0B57D0;
-  --line:#E8EAED;--tint:#E8F0FE;--tint2:#D3E3FD;--ontint:#0B57D0;
+  --line:#E8EAED;--tint:#E8F0FE;--tint2:#D3E3FD;--ontint:#0B57D0;--os:#E8710A;
   --el1:0 1px 2px 0 rgba(60,64,67,.3),0 1px 3px 1px rgba(60,64,67,.15);
   --el2:0 1px 3px 0 rgba(60,64,67,.3),0 4px 8px 3px rgba(60,64,67,.15);
   --el3:0 11px 15px -7px rgba(60,64,67,.2),0 24px 38px 3px rgba(60,64,67,.14);
@@ -224,6 +224,9 @@ input.fi.rec-date{width:auto;min-width:150px;padding:0 12px;height:36px}
 .rec-tbl tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--or)}
 .rec-idlink{background:none;border:none;padding:0;font-family:'Roboto Mono',monospace;font-size:14px;font-weight:500;color:var(--or);cursor:pointer}
 .rec-idlink:hover{text-decoration:underline}
+/* งานที่ตลาดปลายทางเป็น Oversea — เลขงานเป็นสีส้มทุกที่ที่แสดง
+   ใช้ !important เพื่อให้ชนะสีของสถานะอื่น (เลือกอยู่ / ยังไม่อ่าน / ลิงก์ในตาราง) เสมอ */
+.job-os{color:var(--os) !important}
 .edit-banner{background:var(--tint);border:1px solid #D2E3FC;color:var(--ontint);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px}
 .pass-dot{display:inline-block;background:#E6F4EA;color:#137333;font-size:12px;font-weight:500;padding:3px 10px;border-radius:8px;white-space:nowrap}
 .pass-none{color:var(--muted);font-size:14px}
@@ -702,7 +705,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.6</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.7</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -810,6 +813,18 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
       <div class="fgrp">
         <label class="flbl">เบอร์ติดต่อ</label>
         <input class="fi" id="f_phone" placeholder="เช่น 081-234-5678">
+      </div>
+      <div class="fgrp">
+        <label class="flbl">ตลาดปลายทาง</label>
+        <select class="fi" id="f_market" onchange="syncCountryField()">
+          <option value="">— เลือกตลาดปลายทาง —</option>
+          <option value="Domestic">Domestic (ในประเทศ)</option>
+          <option value="Oversea">Oversea (ต่างประเทศ)</option>
+        </select>
+      </div>
+      <div class="fgrp">
+        <label class="flbl">ประเทศปลายทาง <em id="countryHint"></em></label>
+        <input class="fi" id="f_country" placeholder="เลือก Oversea ก่อนจึงระบุประเทศได้" disabled>
       </div>
     </div>
   </div>
@@ -2447,6 +2462,19 @@ function getRows() {
   return result;
 }
 
+// ---------- ตลาดปลายทาง: ช่องประเทศใช้ได้เฉพาะเมื่อเลือก Oversea ----------
+function syncCountryField(){
+  const m = document.getElementById('f_market');
+  const c = document.getElementById('f_country');
+  const hint = document.getElementById('countryHint');
+  if(!m || !c) return;
+  const over = m.value === 'Oversea';
+  c.disabled = !over;
+  c.placeholder = over ? 'เช่น กัมพูชา, ลาว, เวียดนาม' : 'เลือก Oversea ก่อนจึงระบุประเทศได้';
+  if(!over) c.value = '';   // กลับไป Domestic แล้วไม่ค้างชื่อประเทศเดิมไว้
+  if(hint) hint.textContent = over ? '(จำเป็น)' : '';
+}
+
 // ========== GENERATE DASHBOARD ==========
 function generateDash() {
   if(!requirePerm('createData','สร้าง/แก้ชุดข้อมูลได้เฉพาะ Role: Admin, Sales, OPC')) return;
@@ -2467,6 +2495,9 @@ function generateDash() {
   const uwUnit = document.getElementById('f_uw_unit').value.trim();
   const salesOwner = document.getElementById('f_sales_owner').value;
   const phone = document.getElementById('f_phone').value.trim();
+  const market = document.getElementById('f_market').value;
+  // ประเทศปลายทางเก็บเฉพาะกรณี Oversea
+  const country = market === 'Oversea' ? document.getElementById('f_country').value.trim() : '';
   const cat = document.getElementById('f_category').value;
   const subcat = document.getElementById('f_subcategory').value;
   const priority = document.getElementById('f_priority').value;
@@ -2516,7 +2547,7 @@ function generateDash() {
     // อัพเดตรหัสเดิม (คง id / createdAt / createdBy / modNote ไว้)
     d = editing;
     Object.assign(d, {
-      brand, customer, salesOwner, phone, form, size, sizeUnit, uw, uwUnit, gender, price, notes,
+      brand, customer, salesOwner, phone, market, country, form, size, sizeUnit, uw, uwUnit, gender, price, notes,
       cat, subcat, priority, fdaType, color, scent, flavor, packType, widthCm, lengthCm,
       conceptStr, allConcepts, finalTarget,
       allBenefits, allSP, cons, rows,
@@ -2532,7 +2563,7 @@ function generateDash() {
       createdBy: currentUser || '',
       date: now.toLocaleString('th-TH'),
       metaDate: now.toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric'}),
-      brand, customer, salesOwner, phone, form, size, sizeUnit, uw, uwUnit, gender, price, notes,
+      brand, customer, salesOwner, phone, market, country, form, size, sizeUnit, uw, uwUnit, gender, price, notes,
       cat, subcat, priority, fdaType, color, scent, flavor, packType, widthCm, lengthCm,
       conceptStr, allConcepts, finalTarget,
       allBenefits, allSP, cons,
@@ -2541,7 +2572,7 @@ function generateDash() {
     saveRecord(d);
   }
   logAct('job', editing ? 'แก้ไขชุดข้อมูล' : 'สร้างชุดข้อมูลใหม่',
-    [d.brand&&('แบรนด์ '+d.brand), d.customer&&('ลูกค้า '+d.customer), d.salesOwner&&('Sales '+d.salesOwner), d.form&&('รูปแบบ '+d.form),
+    [d.brand&&('แบรนด์ '+d.brand), d.customer&&('ลูกค้า '+d.customer), d.salesOwner&&('Sales '+d.salesOwner), marketText(d)&&('ตลาด '+marketText(d)), d.form&&('รูปแบบ '+d.form),
      fmtSize(d)&&('บรรจุ '+fmtSize(d)), fmtUW(d)&&('น้ำหนัก/หน่วย '+fmtUW(d)),
      d.cat&&('หมวด '+d.cat+(d.subcat?' / '+d.subcat:'')),
      'สาร '+(d.rows||[]).length+' รายการ'].filter(Boolean).join(' · '), d.id);
@@ -2567,7 +2598,7 @@ function renderDashboard(d){
   document.getElementById('d_title').textContent = brand ? `${brand}` : customer;
   document.getElementById('d_sub').textContent = customer ? `ลูกค้า: ${customer}` : '';
   document.getElementById('d_meta').innerHTML = [
-    `<span><b>รหัส:</b> ${d.id}</span>`,
+    `<span><b>รหัส:</b> <span class="job-id${oseaCls(d)}">${d.id}</span></span>`,
     form ? `<span><b>รูปแบบ:</b> ${form}</span>` : '',
     size ? `<span><b>บรรจุ:</b> ${fmtSize(d)}</span>` : '',
     uw ? `<span><b>น้ำหนัก/หน่วย:</b> ${fmtUW(d)}</span>` : '',
@@ -3098,6 +3129,20 @@ function loadTags(){
 function saveTags(){
   try{ localStorage.setItem('fs_tags', JSON.stringify(tagList)); }catch(e){}
   sbQueue();
+}
+// งานที่ส่งออกต่างประเทศ — ใช้ทำให้เลขงานเป็นสีส้ม
+function isOversea(r){
+  const rec = (typeof r === 'string') ? records.find(x=>x.id===r) : r;
+  return !!rec && rec.market === 'Oversea';
+}
+// คลาสสีส้มสำหรับเลขงาน (คืนค่าว่างเมื่อไม่ใช่งาน Oversea)
+function oseaCls(r){ return isOversea(r) ? ' job-os' : ''; }
+// ตลาดปลายทาง (ฟิลด์ใหม่ optional — งานเก่าที่ไม่มีค่าจะได้ค่าว่าง)
+function marketText(r){
+  const m = (r||{}).market || '';
+  if(!m) return '';
+  const c = (r||{}).country || '';
+  return (m === 'Oversea' && c) ? m + ' · ' + c : m;
 }
 function findTag(id){ return tagList.find(t=>t.id===id) || null; }
 // Role Sales เห็นเฉพาะ Tag ที่ตัวเองสร้าง — Role อื่นเห็นทุก Tag
@@ -3789,6 +3834,7 @@ function buildModifyData(){
   add('ชื่อแบรนด์ / Brand', d.brand);
   add('Sales ผู้รับผิดชอบ', d.salesOwner);
   add('เบอร์ติดต่อ', d.phone);
+  add('ตลาดปลายทาง', marketText(d));
   add('คอนเซปสินค้า', d.conceptStr);
   add('รูปแบบสินค้า', d.form);
   add('ขนาดบรรจุ', fmtSize(d));
@@ -3820,7 +3866,7 @@ function buildModifyData(){
 function modifyListHTML(){
   const rows = visibleRecords().map(r=>`
     <tr>
-      <td><button class="rec-idlink" onclick="openModifyRecord('${r.id}')" title="เข้าไปแก้สูตร/หมายเหตุ">${r.id}</button></td>
+      <td><button class="rec-idlink${oseaCls(r)}" onclick="openModifyRecord('${r.id}')" title="เข้าไปแก้สูตร/หมายเหตุ">${r.id}</button></td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
       <td>${esc(r.form||'-')}</td>
@@ -4237,7 +4283,7 @@ function renderRecordsList(){
     <tr class="${r.rejected ? 'row-rej' : (isFullyApproved(r) ? 'row-done' : '')}">
       ${ckOn?`<td class="rec-ck-cell"><input type="checkbox" class="rec-ck" data-job="${r.id}"
         ${recSel[r.id]?'checked':''} onclick="toggleRecSel('${r.id}', this.checked)" title="เลือกงานนี้"></td>`:''}
-      <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button>
+      <td><button class="rec-idlink${oseaCls(r)}" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด${isOversea(r)?' · Oversea '+esc(r.country||''):''}">${r.id}</button>
         ${(recordTags(r).length || canManageTags()) ? `<div class="tg-row" style="margin-top:4px">
           ${recordTags(r).map(t=>tagChipHTML(t, '', r.id)).join('')}
           ${canManageTags()?`<button class="tg-add" title="เลือก Tag ของ ${esc(r.id)}" onclick="openJobTags('${r.id}')">+ Tag</button>`:''}
@@ -4503,6 +4549,9 @@ function editRecordInSales(id){
   setVal('f_brand', r.brand);
   renderSalesOwnerField(r.salesOwner);
   setVal('f_phone', r.phone);
+  setVal('f_market', r.market || '');
+  syncCountryField();
+  setVal('f_country', r.country || '');
   setVal('f_form', r.form);
   setVal('f_size', r.size);
   setVal('f_size_unit', r.sizeUnit);
@@ -4611,7 +4660,8 @@ function optsFromSelect(id){
 const JD_SECTIONS = {
   customer: {title:'ลูกค้า & แบรนด์', editable:false, fields:[
     {k:'id', label:'รหัสชุดข้อมูล'}, {k:'customer', label:'ลูกค้า'}, {k:'brand', label:'แบรนด์'},
-    {k:'salesOwner', label:'Sales ผู้รับผิดชอบ'}, {k:'phone', label:'เบอร์ติดต่อ'}]},
+    {k:'salesOwner', label:'Sales ผู้รับผิดชอบ'}, {k:'phone', label:'เบอร์ติดต่อ'},
+    {k:'market', label:'ตลาดปลายทาง'}, {k:'country', label:'ประเทศปลายทาง'}]},
   product: {title:'รายละเอียดสินค้า', editable:true, fields:[
     {k:'conceptStr', label:'คอนเซป', full:1},
     {k:'form', label:'รูปแบบ', opts:()=>optsFromSelect('f_form')},
@@ -4751,7 +4801,7 @@ function jobDetailHTML(r, hideTable){
     : '<span class="pass-dot">กำลังดำเนินการ</span>';
 
   const detail = `<div class="jd-secs">
-    ${sec('customer', 'ลูกค้า & แบรนด์', row('รหัสชุดข้อมูล', r.id) + row('ลูกค้า', r.customer) + row('แบรนด์', r.brand) + row('Sales ผู้รับผิดชอบ', r.salesOwner) + row('เบอร์ติดต่อ', r.phone), 3)}
+    ${sec('customer', 'ลูกค้า & แบรนด์', `<div class="jd-row"><span class="jd-k">รหัสชุดข้อมูล</span><span class="jd-v job-id${oseaCls(r)}">${esc(r.id)}</span></div>` + row('ลูกค้า', r.customer) + row('แบรนด์', r.brand) + row('Sales ผู้รับผิดชอบ', r.salesOwner) + row('เบอร์ติดต่อ', r.phone) + row('ตลาดปลายทาง', r.market) + row('ประเทศปลายทาง', r.country), 3)}
     ${sec('product', 'รายละเอียดสินค้า', row('คอนเซป', r.conceptStr) + row('รูปแบบ', r.form) + row('ขนาดบรรจุ', fmtSize(r)) + row('น้ำหนักต่อหน่วย', fmtUW(r)) + row('หมวดผลิตภัณฑ์', r.cat) + row('หมวดย่อย', r.subcat), 3)}
     ${sec('spec', 'ลักษณะสินค้า & บรรจุภัณฑ์', row('สี', r.color) + row('กลิ่น', r.scent) + row('รส', r.flavor) + row('การบรรจุ', r.packType) + row('ขนาด กว้าง × ยาว', fmtDim(r)), 3)}
     ${sec('target', 'กลุ่มเป้าหมาย & ราคา', row('กลุ่มเป้าหมาย', r.finalTarget) + row('เพศ', r.gender) + row('ราคา/หน่วย', r.price?'~'+r.price+' บาท':'') + row('ความสำคัญ', PRIO_LABEL[r.priority]||r.priority) + row('ลักษณะการจดแจ้ง อย.', r.fdaType), 3)}
@@ -4864,7 +4914,7 @@ function openRecordPopup(id){
   showGModal(`
     <div class="modal-hd">
       <div>
-        <div class="modal-t">${esc(r.id)} — ${esc(r.brand||r.customer||'Formula')}</div>
+        <div class="modal-t"><span class="job-id${oseaCls(r)}">${esc(r.id)}</span> — ${esc(r.brand||r.customer||'Formula')}</div>
         <div class="modal-desc">${esc(r.customer||'-')} · สร้างเมื่อ ${esc(r.date)}${r.createdBy?` · โดย ${esc(r.createdBy)}`:''}</div>
       </div>
       <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
@@ -4962,6 +5012,7 @@ function renderChatMenu(){
     const owner = shortSalesName(r && r.salesOwner);
     const tg = recordTags(r);
     const tip = c.jobId + (nm?' — '+nm:'') + (owner?' · Sales '+owner:'') + ' · อนุมัติ ' + done + '/' + NPARTS
+      + (marketText(r)?' · '+marketText(r):'')
       + (tg.length?' · Tag: '+tg.map(t=>t.name).join(', '):'') + (un?' · มีอัพเดทใหม่':'');
     // จุดสีของ Tag ต่อท้ายรหัสงาน (เกิน 3 อันแสดงเป็น +N)
     const tagDots = tg.length ? `<span class="side-tags">
@@ -4970,7 +5021,7 @@ function renderChatMenu(){
       </span>` : '';
     return `<button class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip)}">
       <span class="side-bell${un?'':' off'}">🔔</span>
-      <span>${esc(c.jobId)}</span>
+      <span class="job-id${oseaCls(r)}">${esc(c.jobId)}</span>
       ${tagDots}
       ${owner?`<span class="side-own">${esc(owner)}</span>`:''}
       <span class="side-ap${done===NPARTS?' full':''}">${done}/${NPARTS}</span>
@@ -5269,7 +5320,7 @@ function openNewChatPicker(){
   const avail = visibleRecords().filter(r=>!getChat(r.id));
   const rows = avail.length ? avail.map(r=>`
     <tr>
-      <td><button class="rec-idlink" onclick="newChatFromRecord('${r.id}')">${r.id}</button></td>
+      <td><button class="rec-idlink${oseaCls(r)}" onclick="newChatFromRecord('${r.id}')">${r.id}</button></td>
       <td>${esc(r.brand||'-')}</td><td>${esc(r.customer||'-')}</td><td>${esc(r.form||'-')}</td>
       <td style="white-space:nowrap">${esc(r.date)}</td>
       <td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="newChatFromRecord('${r.id}')">New Chat</button>${jobDelBtnHTML(r)}</td>
@@ -5402,7 +5453,7 @@ function chatRoomHTML(c, r){
       <span style="margin-left:auto">${jobDelBtnHTML(r,'span')}</span>
     </div>
     <div class="db-hdr">
-      <div class="db-title">${esc(c.jobId)} — ${esc(r.brand||r.customer||'Formula')}</div>
+      <div class="db-title"><span class="job-id${oseaCls(r)}">${esc(c.jobId)}</span> — ${esc(r.brand||r.customer||'Formula')}</div>
       <div class="db-sub">${esc(r.customer||'-')} · ${esc(r.conceptStr||'-')} · สร้างห้องแชทเมื่อ ${esc(chatTime(c.createdAt))}</div>
       <div class="db-meta">
         <span><b>ผู้เข้าร่วม:</b> ${c.parts.length} คน</span>
@@ -5759,7 +5810,8 @@ const CHAT_XLS_HEAD = ['รหัสชุดข้อมูล','แบรน�
   'จุดขาย','วันที่สร้าง (แบบเต็ม)','แก้ไขล่าสุด','ผู้แก้ไขล่าสุด',
   'บันทึกหลังปรับสูตร','ผู้บันทึก','เวลาที่บันทึก',
   'PD Pass','RA Pass','RD Pass','Sales Pass',
-  'สถานะงาน','ปิดงานเมื่อ','ปิดงานโดย','Reject เมื่อ','Reject โดย'];
+  'สถานะงาน','ปิดงานเมื่อ','ปิดงานโดย','Reject เมื่อ','Reject โดย',
+  'ตลาดปลายทาง','ประเทศปลายทาง'];
 const CHAT_ING_HEAD = ['#','ชื่อสาร','น้ำหนัก/หน่วย','แหล่งกำเนิด/Origin','ความเข้มข้น %','สารที่ได้จริง','อย.','หมายเหตุ','สารหลัก'];
 const FDA_TEXT = {ok:'🟢 อนุมัติ', over:'🟡 เกินขีดจำกัด', not_approved:'🔴 ไม่อนุมัติ', unknown:'⚪ ไม่พบในฐานข้อมูล'};
 // ผู้อนุมัติ + เวลา ของแต่ละฝ่าย สำหรับใส่ในไฟล์ Export
@@ -5806,7 +5858,8 @@ async function exportChatExcel(jobId){
     apvText(c,'pd'), apvText(c,'ra'), apvText(c,'rd'), apvText(c,'sales'),
     r.rejected ? 'Reject' : (r.closed ? 'ปิดงานแล้ว' : 'กำลังดำเนินการ'),
     (r.closed && r.closed.at)||'', (r.closed && r.closed.by)||'',
-    (r.rejected && r.rejected.at)||'', (r.rejected && r.rejected.by)||''
+    (r.rejected && r.rejected.at)||'', (r.rejected && r.rejected.by)||'',
+    r.market||'', r.country||''
   ];
   const wsData = XLSX.utils.aoa_to_sheet([CHAT_XLS_HEAD, dataRow]);
   wsData['!cols'] = CHAT_XLS_HEAD.map(h=>({wch: Math.min(46, Math.max(14, String(h).length+8))}));
@@ -5850,7 +5903,8 @@ const XLS_PMAP = {
   'หมวดผลิตภัณฑ์':'f_category','หมวดย่อย':'f_subcategory','ความสำคัญ':'f_priority',
   'ลักษณะการจดแจ้ง อย.':'f_fda_type','สี':'f_color','กลิ่น':'f_scent','รส':'f_flavor',
   'การบรรจุ (บรรจุภัณฑ์)':'f_pack_type','กว้าง (ซม.)':'f_width','ยาว (ซม.)':'f_length',
-  'Sales ผู้รับผิดชอบ':'f_sales_owner','เบอร์ติดต่อ':'f_phone'
+  'Sales ผู้รับผิดชอบ':'f_sales_owner','เบอร์ติดต่อ':'f_phone',
+  'ตลาดปลายทาง':'f_market','ประเทศปลายทาง':'f_country'
 };
 async function ensureXLSX(){
   try{ await loadScript(XLSX_CDN,'XLSX'); return true; }
@@ -5895,6 +5949,9 @@ function collectProductRows(){
     ['การบรรจุ (บรรจุภัณฑ์)', document.getElementById('f_pack_type').value],
     ['กว้าง (ซม.)', g('f_width')],
     ['ยาว (ซม.)', g('f_length')],
+    // ── ต่อท้ายเท่านั้น (กฎข้อ 4) ──
+    ['ตลาดปลายทาง', document.getElementById('f_market').value],
+    ['ประเทศปลายทาง', g('f_country')],
   ];
 }
 const XLS_ING_HEAD = ['ลำดับ','ชื่อสาร','ปริมาณที่ชั่ง (mg)','แหล่งกำเนิด','ความเข้มข้น (%)','สารที่ได้จริง (mg)','Hero','หมายเหตุ'];
@@ -5914,6 +5971,7 @@ function infoColumnarSheet(pairs){
 function applyProductObj(obj){
   const get = k => (obj[k]!=null ? String(obj[k]).trim() : '');
   Object.keys(XLS_PMAP).forEach(k=>{ if(k in obj){ const el=document.getElementById(XLS_PMAP[k]); if(el) el.value=get(k); } });
+  syncCountryField();   // เปิด/ปิดช่องประเทศให้ตรงกับตลาดที่นำเข้ามา
   if('คอนเซป' in obj) setConceptFromString(get('คอนเซป'));
   const claimsKey = Object.keys(obj).find(k=>String(k).indexOf('สรรพคุณ')===0);
   const consKey   = Object.keys(obj).find(k=>String(k).indexOf('ข้อจำกัด')===0);
@@ -6289,7 +6347,7 @@ function resetForm() {
 }
 // ล้างฟอร์ม Customer Data ให้ว่างเปล่า (ไม่ถาม) — ใช้ตอนกดล้าง และตอนสร้างชุดข้อมูลเสร็จ
 function clearCustomerForm() {
-  ['f_customer','f_brand','f_phone','f_concept_custom','f_size','f_size_unit','f_unit_weight','f_target','f_price','f_notes',
+  ['f_customer','f_brand','f_phone','f_country','f_concept_custom','f_size','f_size_unit','f_unit_weight','f_target','f_price','f_notes',
    'f_color','f_scent','f_flavor','f_width','f_length'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
@@ -6297,6 +6355,8 @@ function clearCustomerForm() {
   document.getElementById('f_form').selectedIndex=0;
   document.getElementById('f_gender').selectedIndex=0;
   renderSalesOwnerField('');
+  document.getElementById('f_market').selectedIndex=0;
+  syncCountryField();
   document.getElementById('f_category').selectedIndex=0;
   document.getElementById('f_fda_type').selectedIndex=0;
   document.getElementById('f_pack_type').selectedIndex=0;
