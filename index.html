@@ -503,6 +503,7 @@ select.fi.chat-sales{width:auto;min-width:150px;height:32px;padding:0 8px;font-s
 .role-badge.ra{background:#FEF7E0;color:#B06000}
 .role-badge.rd{background:#F3E8FD;color:#8430CE}
 .role-badge.sales{background:#E4F7FB;color:#007B83}
+.role-badge.oversea{background:#FFF1E0;color:#B65C00}
 .role-badge.opc{background:#FCE8E6;color:#C5221F}
 .role-badge.purchasing{background:#F3E8FD;color:#8430CE}
 .role-badge.mkt{background:#FDE7F3;color:#B80672}
@@ -721,7 +722,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-17.3</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-17.4</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -773,7 +774,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
       <input class="fi" id="userEmail" style="flex:1.4;min-width:160px" placeholder="User ID / อีเมล" onkeydown="if(event.key==='Enter')createUser()">
       <select class="fi role-select" id="newUserRole" title="Role ของผู้ใช้ใหม่">
         <option value="admin">Admin</option><option value="pd">PD</option><option value="ra">RA</option>
-        <option value="rd">RD</option><option value="sales" selected>Sales</option><option value="opc">OPC</option><option value="mkt">MKT</option><option value="purchasing">Purchasing</option>
+        <option value="rd">RD</option><option value="sales" selected>Sales</option><option value="oversea">Oversea</option><option value="opc">OPC</option><option value="mkt">MKT</option><option value="purchasing">Purchasing</option>
       </select>
       <button class="btn btn-p" onclick="createUser()" style="white-space:nowrap">เพิ่ม</button>
     </div>
@@ -2303,7 +2304,7 @@ function switchView(v) {
   const viewIds = {input:'inputView', dash:'dashView', modify:'modifyView', chat:'chatView', act:'actView'};
   if(v==='act' && !can('manageUsers')){ alert('Activities log เปิดดูได้เฉพาะ Role: Admin'); return; }
   if(v==='input' && currentUser && !can('createData')){
-    alert('เมนู Customer Data ใช้ได้เฉพาะ Role: Admin, Sales, OPC, MKT\nRole ของคุณ: ' + (roleLabel(currentRole())||'ไม่ระบุ'));
+    alert('เมนู Customer Data ใช้ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT\nRole ของคุณ: ' + (roleLabel(currentRole())||'ไม่ระบุ'));
     return;
   }
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('on'));
@@ -2514,7 +2515,7 @@ function clearCountryErr(){
 
 // ========== GENERATE DASHBOARD ==========
 function generateDash() {
-  if(!requirePerm('createData','สร้าง/แก้ชุดข้อมูลได้เฉพาะ Role: Admin, Sales, OPC')) return;
+  if(!requirePerm('createData','สร้าง/แก้ชุดข้อมูลได้เฉพาะ Role: Admin, Sales, Oversea, OPC')) return;
   const customer = document.getElementById('f_customer').value.trim();
   const brand = document.getElementById('f_brand').value.trim();
   const rows = getRows();
@@ -2852,6 +2853,8 @@ const ROLES = {
           can:{chat:1, approve:['rd']}},
   sales: {label:'Sales', desc:'สร้างงานใหม่ + คุยในแชท + อนุมัติ Sales · เห็นเฉพาะงานของตนเอง',
           can:{createData:1, chat:1, approve:['sales'], closeJob:1, ownOnly:1}},
+  oversea: {label:'Oversea', desc:'สิทธิ์เท่ากับ Sales + Export Excel · เห็นเฉพาะงานของตนเอง',
+          can:{createData:1, chat:1, approve:['sales'], export:1, closeJob:1, ownOnly:1}},
   opc:   {label:'OPC', desc:'สร้างงานใหม่ + คุยในแชท + Export Excel + ปิดงาน',
           can:{createData:1, chat:1, export:1, closeJob:1}},
   mkt:   {label:'MKT', desc:'สิทธิ์เท่ากับ Sales + PD — สร้างงาน + แก้สูตร + อนุมัติ PD และ Sales + Export Excel + ปิดงาน',
@@ -2860,6 +2863,9 @@ const ROLES = {
           can:{chat:1}},
 };
 const ROLE_KEYS = Object.keys(ROLES);
+// Role ที่ทำหน้าที่ฝ่ายขาย — ล็อกช่อง "Sales ผู้รับผิดชอบ" ไว้ที่ชื่อตนเอง และ Reject งานของตนเองได้
+const SALES_ROLES = ['sales','oversea','mkt'];
+function isSalesRole(role){ return SALES_ROLES.indexOf(role) >= 0; }
 
 function findUser(name){ return userList.find(u=>u.name===name) || null; }
 function currentRole(){ const u = findUser(currentUser); return u ? u.role : ''; }
@@ -3244,7 +3250,7 @@ function canManageTags(){ return !!currentUser && can('createData'); }
 let _tagNewColor = TAG_COLORS[0];
 // ---------- ป๊อปอัพจัดการ Tag ----------
 function openTagManager(){
-  if(!requirePerm('createData','จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  if(!requirePerm('createData','จัดการ Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT')) return;
   _tagNewColor = _tagNewColor || TAG_COLORS[0];
   showGModal(`
     <div class="modal-hd">
@@ -3284,7 +3290,7 @@ function renderTagManager(){
       <button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button>
     </div>
     ${full?'<div class="tg-none" style="margin-top:10px">ครบ '+TAG_MAX+' Tag แล้วทั้งระบบ — ลบอันที่ไม่ใช้ก่อนจึงจะเพิ่มใหม่ได้</div>':''}
-    ${can('ownOnly')?'<div class="tg-none" style="margin-top:10px">Role Sales เห็นและใช้ได้เฉพาะ Tag ที่ตนเองสร้าง</div>':''}`;
+    ${can('ownOnly')?'<div class="tg-none" style="margin-top:10px">Role นี้เห็นและใช้ได้เฉพาะ Tag ที่ตนเองสร้าง</div>':''}`;
 }
 // นับเฉพาะงานที่ผู้ใช้คนนี้มองเห็น (Sales เห็นเฉพาะงานของตัวเอง)
 function countJobsWithTag(id){ return visibleRecords().filter(r=>(r.tags||[]).indexOf(id)>=0).length; }
@@ -3303,7 +3309,7 @@ function addTagFromForm(){
 // (เคยชนกันมาแล้ว ทำให้พิมพ์สรรพคุณแล้ว Enter ไม่ขึ้นป้าย — ดู createTag/addTag)
 function createTag(name, color){
   if(typeof name !== 'string'){ console.warn('[tag] createTag ต้องรับชื่อเป็นข้อความ'); return null; }
-  if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT'); return null; }
+  if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT'); return null; }
   name = name.trim().slice(0,24);
   if(!name) return null;
   if(tagList.length >= TAG_MAX){ alert('สร้าง Tag ได้สูงสุด ' + TAG_MAX + ' อัน'); return null; }
@@ -3329,7 +3335,7 @@ function askDeleteTag(id){
     'ลบ Tag', ()=>deleteTag(id), true);
 }
 function deleteTag(id){
-  if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT'); return; }
+  if(!canManageTags()){ alert('จัดการ Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT'); return; }
   const t = findVisTag(id);   // Sales ลบได้เฉพาะ Tag ที่ตัวเองสร้าง
   if(!t) return;
   tagList = tagList.filter(x=>x.id!==id);
@@ -3351,7 +3357,7 @@ function deleteTag(id){
 function openJobTags(jobId){
   const r = records.find(x=>x.id===jobId);
   if(!r) return;
-  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT')) return;
   showGModal(`
     <div class="modal-hd">
       <div>
@@ -3385,7 +3391,7 @@ function toggleJobTag(jobId, tagId){
   const r = records.find(x=>x.id===jobId);
   const t = findVisTag(tagId);   // Sales ติด/ถอดได้เฉพาะ Tag ที่ตัวเองสร้าง
   if(!r || !t) return;
-  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT')) return;
   r.tags = r.tags || [];
   const i = r.tags.indexOf(tagId);
   if(i>=0) r.tags.splice(i,1); else r.tags.push(tagId);
@@ -3411,19 +3417,19 @@ function matchSalesOwner(name){
   const n = normSalesName(name);
   return SALES_OWNERS.find(s => s === name) || SALES_OWNERS.find(s => normSalesName(s) === n) || '';
 }
-// ชื่อที่ต้องใช้เมื่อผู้ใช้ปัจจุบันเป็น Role Sales
+// ชื่อที่ต้องใช้เมื่อผู้ใช้ปัจจุบันเป็น Role ฝ่ายขาย (Sales / Oversea / MKT)
 function currentSalesOwner(){
-  if(!currentUser || (currentRole() !== 'sales' && currentRole() !== 'mkt')) return '';
+  if(!currentUser || !isSalesRole(currentRole())) return '';
   return matchSalesOwner(currentUser) || currentUser;
 }
-// วาดตัวเลือกใหม่: รายชื่อมาตรฐาน + ผู้ใช้ Role Sales ในระบบ + ค่าที่บันทึกไว้เดิม
+// วาดตัวเลือกใหม่: รายชื่อมาตรฐาน + ผู้ใช้ Role Sales/Oversea ในระบบ + ค่าที่บันทึกไว้เดิม
 function renderSalesOwnerField(keep){
   const sel = document.getElementById('f_sales_owner');
   if(!sel) return;
-  const locked = currentRole() === 'sales' || currentRole() === 'mkt';
+  const locked = isSalesRole(currentRole());
   const want = locked ? currentSalesOwner() : (keep != null ? keep : sel.value);
   const list = SALES_OWNERS.slice();
-  userList.filter(u=>u.role==='sales').forEach(u=>{ if(!matchSalesOwner(u.name) && list.indexOf(u.name)<0) list.push(u.name); });
+  userList.filter(u=>u.role==='sales'||u.role==='oversea').forEach(u=>{ if(!matchSalesOwner(u.name) && list.indexOf(u.name)<0) list.push(u.name); });
   if(want && list.indexOf(want) < 0) list.push(want);
   sel.innerHTML = (locked ? '' : '<option value="">— เลือก Sales ผู้รับผิดชอบ —</option>')
     + list.map(s=>'<option>'+esc(s)+'</option>').join('');
@@ -4358,12 +4364,11 @@ function isJobOwner(r){
   const mine = matchSalesOwner(currentUser) || currentUser;
   return normSalesName(owner) === normSalesName(mine);
 }
-// Reject งานได้: Admin · หรือ Sales / MKT ที่เป็นเจ้าของงานนั้น
+// Reject งานได้: Admin · หรือ Sales / Oversea / MKT ที่เป็นเจ้าของงานนั้น
 function canReject(r){
   if(!r || !currentUser) return false;
   if(currentRole() === 'admin') return true;
-  const role = currentRole();
-  if(role !== 'sales' && role !== 'mkt') return false;
+  if(!isSalesRole(currentRole())) return false;
   return isJobOwner(r);
 }
 // งานที่ยังเดินอยู่ = ยังไม่ปิด และยังไม่ถูก Reject
@@ -4538,7 +4543,7 @@ function toggleRecSelAll(on){
 function clearRecSel(){ recSel = {}; renderRecordsList(); }
 // ติด/ถอด Tag ให้ทุกงานที่เลือกไว้
 function bulkTag(tagId, add){
-  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT')) return;
   const t = findVisTag(tagId);   // Sales ติด/ถอดได้เฉพาะ Tag ที่ตัวเองสร้าง
   const ids = selectedJobIds();
   if(!t || !ids.length) return;
@@ -4561,7 +4566,7 @@ function bulkTag(tagId, add){
   if(document.getElementById('chatView').classList.contains('on')) renderChat();
 }
 function openBulkTags(){
-  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, OPC, MKT')) return;
+  if(!requirePerm('createData','ติด Tag ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT')) return;
   if(!selectedJobIds().length) return;
   showGModal(`
     <div class="modal-hd">
@@ -4687,7 +4692,7 @@ function setTags(containerId, inputId, arr){
 function editRecordInSales(id){
   const r = records.find(x=>x.id===id);
   if(!r) return;
-  if(!requirePerm('createData','แก้ไขใน Customer Data ได้เฉพาะ Role: Admin, Sales, OPC')) return;
+  if(!requirePerm('createData','แก้ไขใน Customer Data ได้เฉพาะ Role: Admin, Sales, Oversea, OPC')) return;
   setVal('f_customer', r.customer);
   setVal('f_brand', r.brand);
   renderSalesOwnerField(r.salesOwner);
@@ -4848,7 +4853,7 @@ function openJobSection(jobId, key){
   const r = records.find(x=>x.id===jobId);
   const s = JD_SECTIONS[key];
   if(!r || !s) return;
-  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role Sales เห็นเฉพาะงานของตนเอง'); return; }
+  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role นี้เห็นเฉพาะงานของตนเอง'); return; }
   const edit = canEditSection(key);
   const body = edit
     ? `<div class="jd-edit-grid">${s.fields.map((f,i)=>{
@@ -5008,7 +5013,7 @@ function jobDelBtnHTML(r, tag){
 function deleteJob(id){
   const r = records.find(x=>x.id===id);
   if(!r) return;
-  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role Sales เห็นเฉพาะงานของตนเอง'); return; }
+  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role นี้เห็นเฉพาะงานของตนเอง'); return; }
   if(!canDeleteJob(r)){
     alert('ลบงานได้เฉพาะ Role: Admin\nRole ของคุณ: ' + (roleLabel(currentRole())||'ไม่ระบุ'));
     return;
@@ -5044,7 +5049,7 @@ function doDeleteJob(r, c, msgN){
 function openRecordPopup(id){
   const r = records.find(x=>x.id===id);
   if(!r) return;
-  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role Sales เห็นเฉพาะงานของตนเอง'); return; }
+  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role นี้เห็นเฉพาะงานของตนเอง'); return; }
   const c = getChat(id);
   const chatBtn = c
     ? `<button class="btn btn-p btn-sm" onclick="closeGModal();openChatRoom('${r.id}')">ไปที่ห้องแชท (${c.messages.filter(m=>m.type!=='sys').length})</button>`
@@ -5355,7 +5360,7 @@ function openChatRoom(jobId){
   sbTouchBusy();
   sbQueue();
   if(!canSeeRecord(records.find(x=>x.id===jobId))){
-    alert('งานนี้สร้างโดยผู้ใช้อื่น — Role Sales เห็นเฉพาะงานของตนเอง');
+    alert('งานนี้สร้างโดยผู้ใช้อื่น — Role นี้เห็นเฉพาะงานของตนเอง');
     chatOpenId = null; renderChat(); return;
   }
   const c = getChat(jobId) || createChat(jobId);
@@ -5450,8 +5455,8 @@ function chatQuickFilter(kind){
   renderChat();
 }
 function chatFilterHTML(){
-  // Role Sales: เห็นได้เฉพาะของตัวเอง — ล็อกช่องไว้ที่ชื่อตัวเอง เลือกคนอื่นไม่ได้
-  const lockSales = currentRole() === 'sales';
+  // Role ที่เห็นเฉพาะงานของตนเอง (Sales / Oversea) — ล็อกช่องไว้ที่ชื่อตัวเอง เลือกคนอื่นไม่ได้
+  const lockSales = can('ownOnly');
   if(lockSales) chatSalesFilter = '';     // งานที่เห็นถูกจำกัดเป็นของตัวเองอยู่แล้ว
   const own = lockSales ? (currentSalesOwner() || currentUser) : '';
   const opts = lockSales
@@ -5460,7 +5465,7 @@ function chatFilterHTML(){
       + chatSalesOptions().map(s=>`<option value="${esc(s)}"${s===chatSalesFilter?' selected':''}>${esc(s)}</option>`).join('');
   return `<div class="rec-filter chat-filter">
     <span class="rec-fl-lbl">Sales</span>
-    <select class="fi chat-sales" id="chatSales" onchange="applyChatFilter()"${lockSales?' disabled title="Role Sales เห็นเฉพาะงานของตนเอง"':''}>
+    <select class="fi chat-sales" id="chatSales" onchange="applyChatFilter()"${lockSales?' disabled title="Role นี้เห็นเฉพาะงานของตนเอง"':''}>
       ${opts}
     </select>
     <span class="rec-fl-lbl">ช่วงวันที่</span>
@@ -5663,7 +5668,7 @@ function chatRoomHTML(c, r){
     ? (can('export')
         ? `<div class="ap-done">อนุมัติครบทุกฝ่ายแล้ว — ส่งออกไฟล์ได้</div>
        <button class="btn btn-p btn-sm" style="width:100%;justify-content:center" onclick="exportChatExcel('${c.jobId}')">Export Excel files</button>${expLog}`
-        : `<div class="ap-done">อนุมัติครบทุกฝ่ายแล้ว</div><div style="font-size:11.5px;color:var(--muted)">ส่งออกไฟล์ได้เฉพาะ Role: Admin, OPC, MKT</div>${expLog}`)
+        : `<div class="ap-done">อนุมัติครบทุกฝ่ายแล้ว</div><div style="font-size:11.5px;color:var(--muted)">ส่งออกไฟล์ได้เฉพาะ Role: Admin, Oversea, OPC, MKT</div>${expLog}`)
     : `<div style="font-size:11.5px;color:var(--muted)">ปุ่ม Export Excel จะแสดงเมื่ออนุมัติครบทั้ง PD / RA / RD / Sales</div>${expLog}`;
 
   return `
@@ -5884,7 +5889,7 @@ function closeJobHTML(r){
       ${can('closeJob') ? `<button class="btn btn-g btn-sm" style="width:100%;justify-content:center" onclick="reopenJob('${r.id}')">เปิดงานอีกครั้ง</button>` : ''}`;
   }
   if(!can('closeJob'))
-    return `<div style="font-size:11.5px;color:var(--muted)">ปิดงานได้เฉพาะ Role: Admin, Sales, OPC</div>`;
+    return `<div style="font-size:11.5px;color:var(--muted)">ปิดงานได้เฉพาะ Role: Admin, Sales, Oversea, OPC</div>`;
   return `<button class="btn btn-s btn-sm" style="width:100%;justify-content:center" onclick="closeJob('${r.id}')">ปิดงาน (Close job)</button>
     <div style="font-size:11.5px;color:var(--muted);margin-top:8px">ปิดงานเมื่อดำเนินการเสร็จสิ้นแล้ว</div>`;
 }
@@ -5899,7 +5904,7 @@ function gotoCloseBox(){
 function closeJob(id){
   const r = records.find(x=>x.id===id);
   if(!r) return;
-  if(!requirePerm('closeJob','ปิดงานได้เฉพาะ Role: Admin, Sales, OPC')) return;
+  if(!requirePerm('closeJob','ปิดงานได้เฉพาะ Role: Admin, Sales, Oversea, OPC')) return;
   if(r.rejected){ alert('งานนี้ถูก Reject แล้ว — ปิดงานซ้ำไม่ได้'); return; }
   askConfirm('ปิดงาน ' + r.id + '?',
     ['งานจะถูกเก็บเข้ากล่อง Close job ในหน้า Dashboard',
@@ -5920,7 +5925,7 @@ function doCloseJob(r){
 function reopenJob(id){
   const r = records.find(x=>x.id===id);
   if(!r || !r.closed) return;
-  if(!requirePerm('closeJob','เปิดงานอีกครั้งได้เฉพาะ Role: Admin, Sales, OPC')) return;
+  if(!requirePerm('closeJob','เปิดงานอีกครั้งได้เฉพาะ Role: Admin, Sales, Oversea, OPC')) return;
   askConfirm('เปิดงาน ' + r.id + ' อีกครั้ง?',
     ['งานจะกลับมาอยู่ในรายการที่กำลังดำเนินการ',
      'รหัสงานจะกลับเข้าเมนูด้านซ้ายใต้ Chat Message'],
@@ -6044,7 +6049,9 @@ async function exportChatExcel(jobId){
   const c = getChat(jobId);
   const r = records.find(x=>x.id===jobId);
   if(!c || !r) return;
-  if(!requirePerm('export','กด Export Excel ได้เฉพาะ Role: Admin, OPC, MKT')) return;
+  if(!requirePerm('export','กด Export Excel ได้เฉพาะ Role: Admin, Oversea, OPC, MKT')) return;
+  // Role ที่เห็นเฉพาะงานของตนเอง (Oversea) ส่งออกงานของคนอื่นไม่ได้
+  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น — Role นี้เห็นเฉพาะงานของตนเอง'); return; }
   if(!CHAT_PARTS.every(p=>c.approvals[p.key])){
     alert('ต้องอนุมัติครบทั้ง PD / RA / RD / Sales ก่อน Export');
     return;
