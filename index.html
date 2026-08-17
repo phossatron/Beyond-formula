@@ -88,6 +88,19 @@ body{font-family:'Noto Sans Thai','Roboto','Google Sans',Arial,'Segoe UI',sans-s
 .tg-chip .tg-dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0}
 .tg-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tg-none{font-size:11.5px;color:var(--muted)}
+/* ประวัติเวอร์ชันของงาน */
+.ver-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.ver-row:last-child{border-bottom:none}
+.ver-when{font-family:'Roboto Mono',monospace;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.ver-what{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ver-why{font-size:11px;color:var(--muted)}
+.ver-now{font-size:11.5px;color:var(--gr);font-weight:500;white-space:nowrap}
+/* แถบเตือนเมื่อระบบกันการเขียนทับหมู่ */
+.guard-bar{position:fixed;left:0;right:0;bottom:0;z-index:350;background:#FCE8E6;border-top:2px solid var(--re);
+  padding:12px 20px;display:none;align-items:center;gap:14px;flex-wrap:wrap;box-shadow:var(--el2)}
+.guard-bar.on{display:flex}
+.guard-t{font-size:13px;font-weight:500;color:var(--re)}
+.guard-d{font-size:12px;color:var(--tx);flex:1;min-width:220px}
 /* ถอด Tag ได้จากหน้า Dashboard — กากบาทบนป้าย */
 .tg-x{background:none;border:none;padding:0 0 0 2px;margin:0;cursor:pointer;color:inherit;opacity:.55;
   font-size:13px;line-height:1;font-family:inherit}
@@ -708,7 +721,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-17.2</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-17.3</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -1178,6 +1191,13 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 </div>
 
 <!-- ======= MODIFY DATA VIEW ======= -->
+<!-- เบรกฉุกเฉิน: ขึ้นเมื่อระบบกันการเขียนทับสูตรหลายงานพร้อมกัน -->
+<div class="guard-bar" id="guardBar">
+  <span class="guard-t">⛔ หยุดการส่งข้อมูลไว้ก่อน</span>
+  <span class="guard-d" id="guardMsg"></span>
+  <button class="btn btn-g btn-sm" onclick="sbGuardTakeServer()">ใช้ข้อมูลล่าสุดจากเซิร์ฟเวอร์</button>
+  <button class="btn btn-p btn-sm" onclick="sbGuardSendAnyway()">ยืนยันส่งข้อมูลของเครื่องนี้</button>
+</div>
 <div id="modifyView" class="view">
   <div id="modEmpty" class="empty">
     <div class="empty-ic"><svg viewBox="0 0 24 24" width="56" height="56" fill="#BDC1C6"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/></svg></div>
@@ -4185,7 +4205,78 @@ function loadRecords(){
   }catch(e){ records=[]; recCounter=0; }
   syncRecCounter();
 }
+// ---------- ประวัติเวอร์ชันของงาน — ตาข่ายกันข้อมูลหาย ----------
+// เก็บเฉพาะในเครื่องนี้ ไม่ส่งขึ้นเซิร์ฟเวอร์ (เป็นสำเนากันพลาดของเครื่องที่แก้)
+// ทุกครั้งที่เนื้อหางานเปลี่ยน — ไม่ว่าจะเพราะคนแก้เอง หรือเพราะซิงก์เอาของใหม่มาทับ
+// ตัวเดิมจะถูกเก็บไว้ที่นี่ก่อนเสมอ จึงกู้คืนได้ทุกกรณี
+const RECBAK_KEY = 'fs_recbak';
+const RECBAK_PER = 12;          // เก็บกี่เวอร์ชันต่อ 1 งาน
+const RECBAK_MAX_CHARS = 1500000;   // เพดานรวม กันไม่ให้ localStorage เต็ม
+let recBak = {};                // {รหัสงาน: [{ts, by, why, data}]} ใหม่สุดอยู่หน้าสุด
+let recLastJson = {};           // สภาพล่าสุดที่บันทึกไว้ ใช้หาว่างานไหนเปลี่ยน
+function loadRecBak(){
+  try{ const v = JSON.parse(localStorage.getItem(RECBAK_KEY) || '{}'); recBak = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
+  catch(e){ recBak = {}; }
+}
+function saveRecBak(){
+  try{
+    let s = JSON.stringify(recBak);
+    // ใหญ่เกินเพดาน → ตัดเวอร์ชันเก่าสุดของงานที่มีประวัติเยอะสุดออกทีละอัน
+    let guard = 0;
+    while(s.length > RECBAK_MAX_CHARS && guard++ < 500){
+      let big = null;
+      Object.keys(recBak).forEach(k=>{ if(!big || recBak[k].length > recBak[big].length) big = k; });
+      if(!big || !recBak[big].length) break;
+      recBak[big].pop();
+      if(!recBak[big].length) delete recBak[big];
+      s = JSON.stringify(recBak);
+    }
+    localStorage.setItem(RECBAK_KEY, s);
+  }catch(e){}
+}
+// เก็บสภาพก่อนหน้าของงาน 1 ใบ (rec = object เดิม, why = เหตุที่เปลี่ยน)
+function bakRecord(rec, why){
+  if(!rec || !rec.id) return;
+  const list = recBak[rec.id] = recBak[rec.id] || [];
+  const j = JSON.stringify(rec);
+  if(list.length && JSON.stringify(list[0].data) === j) return;   // เหมือนเดิม ไม่ต้องเก็บซ้ำ
+  list.unshift({ts: nowTs(), by: currentUser || '', why: why || '', data: JSON.parse(j)});
+  if(list.length > RECBAK_PER) list.length = RECBAK_PER;
+}
+// เทียบสภาพปัจจุบันกับที่บันทึกไว้ครั้งก่อน แล้วเก็บ 'ตัวเดิม' ของงานที่เปลี่ยนไป
+// เรียกจาก saveRecordsStore() ที่เดียว จึงครอบคลุมทั้งการแก้เองและการถูกซิงก์ทับ
+function trackRecordVersions(why){
+  let touched = 0;
+  const seen = {};
+  records.forEach(r=>{
+    if(!r || !r.id) return;
+    seen[r.id] = 1;
+    const j = JSON.stringify(r);
+    const prev = recLastJson[r.id];
+    if(prev === undefined){ recLastJson[r.id] = j; return; }   // เพิ่งเห็นครั้งแรก ไม่มีอะไรให้เก็บ
+    if(prev === j) return;
+    try{ bakRecord(JSON.parse(prev), why || 'ข้อมูลถูกเปลี่ยน'); touched++; }catch(e){}
+    recLastJson[r.id] = j;
+  });
+  // งานที่หายไปจากรายการ (ถูกลบ/ถูกซิงก์เอาออก) — เก็บตัวสุดท้ายไว้ด้วย
+  Object.keys(recLastJson).forEach(id=>{
+    if(seen[id]) return;
+    try{ bakRecord(JSON.parse(recLastJson[id]), 'งานถูกเอาออกจากรายการ'); touched++; }catch(e){}
+    delete recLastJson[id];
+  });
+  if(touched) saveRecBak();
+  return touched;
+}
+function recBakList(id){ return recBak[id] || []; }
+// สรุปเวอร์ชันแบบสั้น ๆ ให้คนอ่านออกว่าต่างกันตรงไหน
+function recBakSummary(d){
+  const rows = (d && d.rows) || [];
+  const total = rows.reduce((s,x)=>s + (Number(x.w)||0), 0);
+  return 'สาร ' + rows.length + ' รายการ · รวม ' + (Math.round(total*100)/100) + ' mg'
+    + ((d && d.modNote && d.modNote.text) ? ' · มีหมายเหตุ' : '');
+}
 function saveRecordsStore(){
+  trackRecordVersions(sbApplying ? 'ข้อมูลจากเซิร์ฟเวอร์เข้ามาทับ' : 'แก้ไขในเครื่องนี้');
   try{
     localStorage.setItem('fs_records', JSON.stringify(records));
     localStorage.setItem('fs_reccounter', String(recCounter));
@@ -4979,10 +5070,87 @@ function openRecordPopup(id){
       ${r.closed && can('closeJob')
         ? `<button class="btn btn-s btn-sm" onclick="reopenJob('${r.id}');openRecordPopup('${r.id}')">เปิดงานอีกครั้ง</button>`
         : ''}
+      <button class="btn btn-s btn-sm" onclick="openRecordHistory('${r.id}')">ประวัติเวอร์ชัน (${recBakList(r.id).length})</button>
       <button class="btn btn-s btn-sm" onclick="closeGModal();printRecord('${r.id}')">พิมพ์</button>
       ${jobDelBtnHTML(r)}
       <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="closeGModal()">ปิด</button>
     </div>`);
+}
+
+// ---------- ป๊อปอัพ: ประวัติเวอร์ชันของงาน + กู้คืน ----------
+function canRestoreRecord(){ return !!currentUser && can('editFormula'); }
+function openRecordHistory(id){
+  const r = records.find(x=>x.id===id);
+  if(!r) return;
+  if(!canSeeRecord(r)){ alert('งานนี้สร้างโดยผู้ใช้อื่น'); return; }
+  showGModal(`
+    <div class="modal-hd">
+      <div>
+        <div class="modal-t">ประวัติเวอร์ชัน ${esc(id)}</div>
+        <div class="modal-desc">สำเนาที่เก็บไว้ในเครื่องนี้ ทุกครั้งที่ข้อมูลเปลี่ยน · ใช้กู้คืนเมื่อข้อมูลหายหรือถูกทับ</div>
+      </div>
+      <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
+    </div>
+    <div id="verBody"></div>`);
+  renderRecordHistory(id);
+}
+function renderRecordHistory(id){
+  const box = document.getElementById('verBody');
+  const r = records.find(x=>x.id===id);
+  if(!box || !r) return;
+  const list = recBakList(id);
+  const rows = list.map((v,i)=>`
+    <div class="ver-row">
+      <span class="ver-when">${esc(chatTime(v.ts))}</span>
+      <span class="ver-what">${esc(recBakSummary(v.data))}
+        <div class="ver-why">${esc(v.why||'')}${v.by?' · '+esc(v.by):''}</div></span>
+      ${canRestoreRecord()
+        ? `<button class="btn btn-s btn-sm" onclick="askRestoreRecord('${esc(id)}',${i})">กู้คืน</button>`
+        : ''}
+    </div>`).join('');
+  box.innerHTML = `
+    <div class="ver-row">
+      <span class="ver-when">ตอนนี้</span>
+      <span class="ver-what">${esc(recBakSummary(r))}<div class="ver-why">ข้อมูลที่ใช้งานอยู่</div></span>
+      <span class="ver-now">● ปัจจุบัน</span>
+    </div>
+    ${rows || '<div class="tg-none" style="padding:12px 0">ยังไม่มีเวอร์ชันเก่าเก็บไว้ในเครื่องนี้ (จะเริ่มเก็บตั้งแต่ครั้งต่อไปที่ข้อมูลเปลี่ยน)</div>'}
+    ${canRestoreRecord() ? '' : '<div class="tg-none" style="margin-top:10px">กู้คืนได้เฉพาะ Role: Admin, PD, MKT</div>'}
+    <div class="modal-acts" style="margin-top:16px">
+      <button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button>
+    </div>`;
+}
+function askRestoreRecord(id, i){
+  const v = recBakList(id)[i];
+  if(!v) return;
+  askConfirm('กู้คืนเวอร์ชันนี้?',
+    ['ของงาน ' + id + ' เมื่อ ' + chatTime(v.ts),
+     v.why || '',
+     'เวอร์ชันที่ใช้อยู่ตอนนี้จะถูกเก็บเข้าประวัติไว้ กู้กลับได้เหมือนกัน'].filter(Boolean),
+    'กู้คืน', ()=>restoreRecord(id, i), false);
+}
+function restoreRecord(id, i){
+  if(!requirePerm('editFormula','กู้คืนเวอร์ชันได้เฉพาะ Role: Admin, PD, MKT')) return;
+  const idx = records.findIndex(x=>x.id===id);
+  const v = recBakList(id)[i];
+  if(idx < 0 || !v) return;
+  bakRecord(records[idx], 'ก่อนกู้คืนเวอร์ชันเก่า');   // ของปัจจุบันต้องกู้กลับได้ด้วย
+  const now = new Date();
+  const next = JSON.parse(JSON.stringify(v.data));
+  next.id = id;                       // กันรหัสงานเพี้ยนเด็ดขาด
+  next.createdAt = records[idx].createdAt;
+  next.createdBy = records[idx].createdBy;
+  next.updatedAt = now.getTime();
+  next.updatedBy = currentUser || '';
+  records[idx] = next;
+  saveRecBak();
+  saveRecordsStore();
+  logAct('formula','กู้คืนเวอร์ชันของงาน', chatTime(v.ts) + ' · ' + recBakSummary(v.data), id);
+  updateChatBadge();
+  renderRecordsList();
+  if(modifyRec && modifyRec.id === id){ modifyRec = records[idx]; buildModifyData(); renderModify(); }
+  if(document.getElementById('chatView').classList.contains('on')) renderChat();
+  renderRecordHistory(id);
 }
 
 // ========== CHAT MESSAGE (ห้องแชทตามรหัสงาน) ==========
@@ -6931,6 +7099,7 @@ function sbGroup(rows, key){
 // ใช้กันไม่ให้ข้อมูลเก่าจากเซิร์ฟเวอร์ทับของที่เพิ่งแก้ (เช่น PD แก้สูตรแล้วเด้งกลับ)
 function recDirty(r){
   if(!r) return false;
+  if(sbGuardTake) return false;    // คนใช้สั่งให้เอาของจากเซิร์ฟเวอร์รอบนี้
   const snap = sbSnap.records[r.id];
   // ยังไม่เคยซิงก์งานใบนี้ในรอบการทำงานนี้ (เช่น เพิ่งเปิดหน้าเว็บ) = ไม่มีฐานให้เทียบ
   // ห้ามถือว่า "แก้ค้าง" เด็ดขาด ไม่งั้นข้อมูลเก่าใน localStorage จะทับของใหม่บนเซิร์ฟเวอร์ตอนเปิดหน้า
@@ -6952,7 +7121,7 @@ function sbApply(d){
     syncRecCounter();
     // เก็บสำเนาไว้ในเครื่องด้วย เผื่อเน็ตหลุดจะยังเปิดดูข้อมูลล่าสุดได้
     saveRecordsStore(); saveChats(); saveActivities(); saveUsers();
-  } finally { sbApplying = false; }
+  } finally { sbApplying = false; sbGuardTake = false; }
   if(JSON.stringify([records, chats, userList, activities.length]) === before) return false;
   sbRerender();
   return true;
@@ -7106,6 +7275,40 @@ function sbRerender(){
 }
 
 // ---------- ส่งเฉพาะสิ่งที่เปลี่ยนขึ้นเซิร์ฟเวอร์ ----------
+// ---------- เบรกฉุกเฉิน กันเครื่องเดียวเขียนทับสูตรหลายงานพร้อมกัน ----------
+// เคสจริงที่เคยเกิด: เครื่องที่มีข้อมูลเก่าค้างอยู่ ดันสูตรเก่าขึ้นไปทับงานล่าสุด 17 ใบรวดเดียว
+// ถ้ารอบส่งขึ้นจะแก้ 'สูตร' ของงานเกินจำนวนนี้พร้อมกัน ให้หยุดไว้ก่อนแล้วถามคนใช้
+const SB_GUARD_MAX = 3;
+let sbGuardOK = false;        // คนใช้ยืนยันแล้วว่าให้ส่งของเครื่องนี้ขึ้นไป
+let sbGuardTake = false;      // รอบถัดไปให้ของจากเซิร์ฟเวอร์ชนะ
+let sbGuardIds = [];
+function sbGuardHold(ids){
+  sbGuardIds = ids;
+  const bar = document.getElementById('guardBar');
+  const msg = document.getElementById('guardMsg');
+  if(msg) msg.textContent = 'เครื่องนี้กำลังจะเขียนทับสูตรของงาน ' + ids.length + ' ใบพร้อมกัน ('
+    + ids.slice(0,6).join(', ') + (ids.length>6?' …':'') + ') '
+    + 'ถ้าไม่ได้ตั้งใจแก้เอง แปลว่าข้อมูลในเครื่องนี้เก่ากว่าบนเซิร์ฟเวอร์ — เลือกได้ว่าจะใช้ของฝั่งไหน';
+  if(bar) bar.classList.add('on');
+  console.warn('[sync] กันการเขียนทับหมู่:', ids.join(', '));
+}
+function sbGuardClear(){
+  sbGuardIds = [];
+  const bar = document.getElementById('guardBar');
+  if(bar) bar.classList.remove('on');
+}
+function sbGuardSendAnyway(){
+  sbGuardOK = true;          // ยืนยันครั้งเดียว ใช้ได้ทั้งรอบการทำงานนี้
+  sbGuardClear();
+  sbQueue();
+}
+// ทิ้งของในเครื่อง แล้วรับของล่าสุดจากเซิร์ฟเวอร์
+// (ของเดิมไม่หาย — trackRecordVersions() เก็บเข้าประวัติเวอร์ชันให้อัตโนมัติ)
+function sbGuardTakeServer(){
+  sbGuardTake = true;
+  sbGuardClear();
+  sbCycle(true);
+}
 async function sbPush(){
   const capBefore = sbCap.msg && sbCap.apv;
   const recUp=[], chtUp=[], usrUp=[], actUp=[], msgUp=[], apvUp=[], apvDel=[];
@@ -7142,6 +7345,22 @@ async function sbPush(){
     const u = actUid(e);
     if(!sbSnap.acts[u]) actUp.push({uid:u, ts:e.ts||0, data:e});
   });
+  // เลือก "ใช้ของจากเซิร์ฟเวอร์" ไว้ → รอบนี้ไม่ต้องส่ง record ขึ้นเลย
+  if(sbGuardTake) recUp.length = 0;
+  // เบรกฉุกเฉิน: นับว่ารอบนี้จะไปแก้ 'สูตร' ของงานกี่ใบพร้อมกัน
+  // (การติด Tag / ปิดงาน หลายใบพร้อมกันไม่นับ เพราะไม่ได้แตะสูตร)
+  if(!sbGuardOK && recUp.length > SB_GUARD_MAX){
+    const rowsHit = recUp.filter(u=>{
+      const s = sbSnap.records[u.id];
+      if(s === undefined) return false;         // งานใหม่ที่เซิร์ฟเวอร์ยังไม่มี ไม่นับ
+      let old = null; try{ old = JSON.parse(s); }catch(e){ return false; }
+      return stableStr((u.data||{}).rows || []) !== stableStr((old||{}).rows || []);
+    }).map(u=>u.id);
+    if(rowsHit.length > SB_GUARD_MAX){
+      sbGuardHold(rowsHit);
+      recUp.length = 0;      // งานอื่น ๆ (แชท/อนุมัติ/ผู้ใช้) ยังส่งขึ้นได้ตามปกติ
+    }
+  }
   // ลบเฉพาะรายการที่เคยอยู่บนเซิร์ฟเวอร์แล้วถูกลบในเครื่องนี้จริง
   const recDel = Object.keys(sbSnap.records).filter(k=>!seenR[k]);
   const chtDel = Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
@@ -7249,7 +7468,8 @@ async function sbCycle(urgent){
   sbCycleRunning = true; sbBusy = true; sbChip();
   try{
     const pushed = await sbPush();
-    const full = (Date.now() - sbLastFull) >= SB_FULL_MS;
+    // เลือก "ใช้ของจากเซิร์ฟเวอร์" ต้องดึงทั้งหมด ไม่งั้นรอบ delta จะไม่มีอะไรกลับมาทับของในเครื่อง
+    const full = sbGuardTake || (Date.now() - sbLastFull) >= SB_FULL_MS;
     if(full) sbLastFull = Date.now();
     sbCycleN++;
     const changed = sbApply(await sbPull(full));
@@ -7334,8 +7554,10 @@ window.addEventListener('storage', e=>{
 
 // Init saved Customer Data records (จาก localStorage) แล้วแสดงใน Dashboard
 renderSalesOwnerField();
+loadRecBak();
 loadRecords();
 migrateRecordOwners();
+trackRecordVersions('เปิดหน้าเว็บ');   // ตั้งจุดเทียบตั้งต้น ยังไม่เก็บอะไร
 cleanJunkTags();          // ล้าง Tag ขยะจากบั๊กเก่า — ต้องอยู่หลัง loadRecords() เสมอ
 loadChats();
 updateChatBadge();
