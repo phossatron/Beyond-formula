@@ -708,7 +708,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-14.9</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-17.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -6927,6 +6927,11 @@ function sbGroup(rows, key){
 
 // ---------- เอาข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง ----------
 // ของที่ "ยังไม่เคยขึ้นเซิร์ฟเวอร์" (ไม่อยู่ใน sbSnap) จะไม่ถูกลบทิ้ง เพราะเป็นของที่เพิ่งสร้างในเครื่องนี้
+// งานใบนี้ถูกแก้ในเครื่องแล้วแต่ยังไม่ได้ส่งขึ้นเซิร์ฟเวอร์หรือยัง
+// ใช้กันไม่ให้ข้อมูลเก่าจากเซิร์ฟเวอร์ทับของที่เพิ่งแก้ (เช่น PD แก้สูตรแล้วเด้งกลับ)
+function recDirty(r){
+  return !!r && stableStr(r) !== sbSnap.records[r.id];
+}
 function sbApply(d){
   const before = JSON.stringify([records, chats, userList, activities.length]);
   sbApplying = true;
@@ -6978,7 +6983,12 @@ function sbApplyFull(d){
   d.act.forEach(r=>{ srvAct[r.uid || actUid(r.data)] = r.data; });
 
   // ของในเครื่องที่ยังไม่เคยขึ้นเซิร์ฟเวอร์ → เก็บไว้ ส่งขึ้นในรอบถัดไป
-  records.forEach(r=>{ if(!srvRec[r.id] && !sbSnap.records[r.id]) srvRec[r.id] = r; });
+  // และงานที่ "แก้ในเครื่องแล้วยังไม่ได้ส่งขึ้น" ก็ต้องเก็บของในเครื่องไว้เหมือนกัน
+  // (ไม่งั้นรอบดึงข้อมูลทั้งหมดจะเอาของเก่าจากเซิร์ฟเวอร์มาทับ งานที่เพิ่งแก้จะหายถาวร)
+  records.forEach(r=>{
+    if(!srvRec[r.id]){ if(!sbSnap.records[r.id]) srvRec[r.id] = r; return; }
+    if(recDirty(r)) srvRec[r.id] = r;
+  });
   chats.forEach(c=>{
     if(!srvCht[c.jobId]){ if(!sbSnap.chats[c.jobId]) srvCht[c.jobId] = c; return; }
     (c.messages||[]).forEach(m=>{
@@ -7013,6 +7023,9 @@ function sbApplyFull(d){
 function sbApplyDelta(d){
   d.rec.forEach(r=>{
     const i = records.findIndex(x=>x.id===r.id);
+    // แก้ในเครื่องแล้วยังไม่ได้ส่งขึ้น → ข้ามไปก่อน ปล่อยให้รอบ push ส่งของเราขึ้นไป
+    // (ถ้าทับตรงนี้ นอกจากข้อมูลจะเด้งกลับ sbSnap ยังถูกตั้งเป็นค่าเซิร์ฟเวอร์ จนไม่มีอะไรถูกส่งขึ้นอีกเลย)
+    if(i>=0 && recDirty(records[i])) return;
     if(i>=0) records[i] = r.data; else records.push(r.data);
     sbSnap.records[r.id] = stableStr(r.data);
   });
@@ -7057,7 +7070,23 @@ function sbApplyDelta(d){
 }
 
 // วาดหน้าจอใหม่โดยไม่ให้ข้อความที่ผู้ใช้พิมพ์ค้างอยู่หายไป
+// หน้า PD Modify Data ถือ reference ของ record ไว้ ถ้าซิงก์เปลี่ยนตัว object แล้วไม่ผูกใหม่
+// สิ่งที่ PD แก้ต่อจากนั้นจะไปลงกับ object เก่าที่หลุดออกจาก records แล้ว
+function resyncModifyRec(){
+  if(!modifyRec) return;
+  const live = records.find(x=>x.id===modifyRec.id);
+  if(!live){ modifyRec = null; modifyFields = []; modifyIngs = []; return; }
+  if(live === modifyRec) return;
+  modifyRec = live;
+  // กำลังพิมพ์อยู่ในตารางสูตร → ยังไม่วาดใหม่ เดี๋ยวค่าที่พิมพ์ค้างจะหาย
+  const el = document.activeElement;
+  const typing = el && el.closest && el.closest('#modContent');
+  if(typing) return;
+  buildModifyData();
+  if(document.getElementById('modifyView') && document.getElementById('modifyView').classList.contains('on')) renderModify();
+}
 function sbRerender(){
+  resyncModifyRec();
   const ta = document.getElementById('chatInput');
   const keep = ta ? {v:ta.value, s:ta.selectionStart, e:ta.selectionEnd, focus:document.activeElement===ta} : null;
   renderUserUI();
