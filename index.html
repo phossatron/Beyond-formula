@@ -6883,6 +6883,7 @@ let sbSnap = {records:{}, chats:{}, users:{}, acts:{}, msgs:{}, apvs:{}, counter
 let sbWM = {rec:'', cht:'', usr:'', msg:'', apv:'', met:'', act:0};   // watermark สำหรับดึงเฉพาะที่เปลี่ยน
 let sbIdPool = [];          // เลขงานที่จองไว้ล่วงหน้าจากเซิร์ฟเวอร์
 let sbPendMsg = [];         // ข้อความที่ยังหาห้องไม่เจอ รอลองใหม่รอบหน้า
+let sbPartial = false;      // รอบดึงข้อมูลล่าสุดได้มาไม่ครบหรือไม่ (ถ้าไม่ครบ ห้ามลบอะไรทั้งสิ้น)
 const SB_LAG_MS = 15000;    // ถอย watermark กลับไป 15 วิ กันข้อความที่บันทึกพร้อมกันหลุด
 function sbWMBack(iso){
   if(!iso) return '';
@@ -6913,6 +6914,26 @@ async function sbReq(path, opt){
   }catch(e){}
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
+}
+// PostgREST คืนข้อมูลสูงสุด 1000 แถวต่อคำขอ แม้จะสั่ง limit มากกว่านั้น
+// ตารางที่โตเกิน 1000 แถว (เช่น fs_messages) จึงต้องดึงทีละหน้าจนครบ
+// ถ้าไม่ทำ รอบ "ดึงข้อมูลทั้งหมด" จะเห็นข้อมูลไม่ครบ แล้วเข้าใจผิดว่าของที่เหลือถูกลบไปแล้ว
+const SB_PAGE = 1000;
+async function sbReqAll(path){
+  const out = [];
+  for(let from = 0; ; from += SB_PAGE){
+    let page;
+    try{
+      page = await sbReq(path, {headers:{'Range-Unit':'items', Range: from + '-' + (from + SB_PAGE - 1)}});
+    }catch(err){
+      if(err && err.status === 416) return out;   // ขอเลยแถวสุดท้ายพอดี = ครบแล้ว
+      if(from === 0) throw err;                   // หน้าแรกพังจริง ให้ผู้เรียกจัดการ
+      throw err;
+    }
+    if(!Array.isArray(page)) return from === 0 ? page : out;
+    for(let i=0;i<page.length;i++) out.push(page[i]);
+    if(page.length < SB_PAGE) return out;
+  }
 }
 function sbUpsert(table, rows){
   if(!rows.length) return Promise.resolve();
@@ -7001,21 +7022,23 @@ function sbTopUpIdPool(){ sbFillIdPool().catch(function(){}); }
 // ---------- ดึงข้อมูลจากเซิร์ฟเวอร์ ----------
 // full = true → ดึงทั้งหมด (จับรายการที่ถูกลบได้) / false → เฉพาะที่เปลี่ยนตั้งแต่ครั้งก่อน
 async function sbPull(full){
-  const q = (table, sel, wm) => {
-    let s = table + '?select=' + sel;
+  // ord = คอลัมน์เรียงลำดับคงที่ จำเป็นสำหรับการแบ่งหน้า
+  // ถ้าไม่กำหนด ลำดับแถวของฐานข้อมูลไม่แน่นอน หน้าถัด ๆ ไปอาจข้ามแถวจนข้อมูลขาด
+  const q = (table, sel, wm, ord) => {
+    let s = table + '?select=' + sel + '&order=' + ord;
     if(!full && sbWM[wm]) s += '&updated_at=gte.' + encodeURIComponent(sbWMBack(sbWM[wm]));
-    return sbReq(s);
+    return sbReqAll(s);
   };
   const [rec, cht, usr] = await Promise.all([
-    q('fs_records','id,data,updated_at','rec'),
-    q('fs_chats','job_id,data,updated_at','cht'),
-    q('fs_users','name,data,updated_at','usr')
+    q('fs_records','id,data,updated_at','rec','id.asc'),
+    q('fs_chats','job_id,data,updated_at','cht','job_id.asc'),
+    q('fs_users','name,data,updated_at','usr','name.asc')
   ]);
-  const msg = await sbTry('msg', ()=>q('fs_messages','uid,job_id,ts,data,updated_at','msg'), null);
-  const apv = await sbTry('apv', ()=>q('fs_approvals','job_id,part,data,updated_at','apv'), null);
-  let actQ = 'fs_activities?select=uid,ts,data&order=ts.desc&limit=' + ACT_MAX;
+  const msg = await sbTry('msg', ()=>q('fs_messages','uid,job_id,ts,data,updated_at','msg','uid.asc'), null);
+  const apv = await sbTry('apv', ()=>q('fs_approvals','job_id,part,data,updated_at','apv','job_id.asc,part.asc'), null);
+  let actQ = 'fs_activities?select=uid,ts,data&order=ts.desc,uid.asc&limit=' + ACT_MAX;
   if(!full && sbWM.act) actQ += '&ts=gt.' + Math.max(0, sbWM.act - SB_LAG_MS);
-  const act = await sbReq(actQ);
+  const act = await sbReqAll(actQ);
   // fs_meta เก็บทั้งตัวนับเลขงานและนิยาม Tag — ตัวเล็กมาก ดึงทุกรอบได้
   let metQ = 'fs_meta?select=key,value,updated_at';
   if(!full && sbWM.met) metQ += '&updated_at=gte.' + encodeURIComponent(sbWMBack(sbWM.met));
@@ -7034,8 +7057,12 @@ async function sbPull(full){
   if(maxAt(met)) sbWM.met = maxAt(met);
   (act||[]).forEach(r=>{ if((r.ts||0) > sbWM.act) sbWM.act = r.ts||0; });
 
+  // รอบนี้ดึงข้อมูลบางส่วนไม่สำเร็จ → ห้ามสรุปว่าของที่ไม่เห็นคือของที่ถูกลบ
+  sbPartial = !!full && (msg === null || apv === null);
+
   return {
     full: !!full,
+    partial: sbPartial,
     rec: rec||[], cht: cht||[], usr: usr||[], act: act||[],
     msg: msg, apv: apv,
     counter: (function(){ const m = (met||[]).find(x=>x.key==='reccounter'); return m ? Number(m.value)||0 : null; })(),
@@ -7167,14 +7194,16 @@ function sbApplyFull(d){
   // และงานที่ "แก้ในเครื่องแล้วยังไม่ได้ส่งขึ้น" ก็ต้องเก็บของในเครื่องไว้เหมือนกัน
   // (ไม่งั้นรอบดึงข้อมูลทั้งหมดจะเอาของเก่าจากเซิร์ฟเวอร์มาทับ งานที่เพิ่งแก้จะหายถาวร)
   records.forEach(r=>{
-    if(!srvRec[r.id]){ if(!sbSnap.records[r.id]) srvRec[r.id] = r; return; }
+    if(!srvRec[r.id]){ if(d.partial || !sbSnap.records[r.id]) srvRec[r.id] = r; return; }
     if(recDirty(r)) srvRec[r.id] = r;
   });
   chats.forEach(c=>{
-    if(!srvCht[c.jobId]){ if(!sbSnap.chats[c.jobId]) srvCht[c.jobId] = c; return; }
+    if(!srvCht[c.jobId]){ if(d.partial || !sbSnap.chats[c.jobId]) srvCht[c.jobId] = c; return; }
+    // แอปไม่มีฟีเจอร์ลบข้อความรายข้อความ → ข้อความในเครื่องต้องไม่ถูกทิ้งไม่ว่ากรณีใด
+    // (เดิมเช็ค sbSnap.msgs ด้วย ทำให้ข้อความที่เคยซิงก์แล้วแต่รอบนี้เซิร์ฟเวอร์ส่งมาไม่ครบ ถูกลบทิ้งจากเครื่อง)
     (c.messages||[]).forEach(m=>{
       const u = msgUid(c.jobId, m);
-      if(!sbSnap.msgs[u] && !srvCht[c.jobId].messages.some(x=>msgUid(c.jobId,x)===u)) srvCht[c.jobId].messages.push(m);
+      if(!srvCht[c.jobId].messages.some(x=>msgUid(c.jobId,x)===u)) srvCht[c.jobId].messages.push(m);
     });
     CHAT_PARTS.forEach(p=>{
       const a = (c.approvals||{})[p.key];
@@ -7369,9 +7398,10 @@ async function sbPush(){
     }
   }
   // ลบเฉพาะรายการที่เคยอยู่บนเซิร์ฟเวอร์แล้วถูกลบในเครื่องนี้จริง
-  const recDel = Object.keys(sbSnap.records).filter(k=>!seenR[k]);
-  const chtDel = Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
-  const usrDel = Object.keys(sbSnap.users).filter(k=>!seenU[k]);
+  // ถ้ารอบดึงข้อมูลล่าสุดได้มาไม่ครบ ห้ามสั่งลบเด็ดขาด — ของที่ "ไม่เห็น" อาจแค่ยังมาไม่ถึง
+  const recDel = sbPartial ? [] : Object.keys(sbSnap.records).filter(k=>!seenR[k]);
+  const chtDel = sbPartial ? [] : Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
+  const usrDel = sbPartial ? [] : Object.keys(sbSnap.users).filter(k=>!seenU[k]);
   const counterUp = !sbCap.seq && sbSnap.counter !== recCounter;
   const tagsUp = sbSnap.tags !== stableStr(tagList);
 
