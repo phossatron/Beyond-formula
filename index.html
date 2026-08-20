@@ -521,6 +521,12 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 .cf-head{display:flex;align-items:center;gap:10px;margin:16px 0 10px;flex-wrap:wrap}
 .cf-title{font-size:14px;font-weight:500}
 .cf-actual{color:var(--ye);font-weight:500;font-family:'Roboto Mono',monospace}
+/* แถบบันทึกสูตร — ปุ่มบันทึกชัด ๆ + สถานะว่าค้างอยู่หรือบันทึกแล้ว */
+.fx-bar{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:var(--card2);border:1px solid var(--bd);border-radius:8px;flex-wrap:wrap}
+.fx-state{font-size:12px;color:var(--muted)}
+.fx-state.warn{color:var(--re);font-weight:500}
+.fx-state.ok{color:#137333;font-weight:500}
+tr.fx-row-dirty td{background:#FFF8E1}
 .rec-tbl input{width:100%;background:var(--card);border:1px solid transparent;border-radius:4px;padding:6px 8px;color:var(--tx);font-size:13px;font-family:inherit;transition:.15s}
 .rec-tbl input:hover{border-color:var(--bd)}
 .rec-tbl input:focus{outline:none;border-color:var(--or);box-shadow:inset 0 0 0 1px var(--or)}
@@ -722,7 +728,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-17.4</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-20.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -4015,12 +4021,12 @@ function renderModify(){
     <tr id="ingrow-${i}" class="${r.verifiedBy?'ver':''}">
       <td style="color:var(--muted);text-align:center">${i+1}</td>
       <td style="text-align:center;white-space:nowrap" id="ingfda-${i}">${r.fdaIcon}${r.hero?' ⭐':''}</td>
-      <td><input value="${esc(r.name)}" onchange="editIng(${i},'name',this.value)"></td>
-      <td><input value="${esc(r.w)}" onchange="editIng(${i},'w',this.value)" style="max-width:90px"></td>
-      <td><input value="${esc(r.o)}" onchange="editIng(${i},'o',this.value)"></td>
-      <td><input value="${esc(r.p)}" onchange="editIng(${i},'p',this.value)" style="max-width:70px"></td>
-      <td><input value="${esc(r.actual)}" onchange="editIng(${i},'actual',this.value)" style="max-width:90px"></td>
-      <td><input value="${esc(r.note)}" onchange="editIng(${i},'note',this.value)"></td>
+      <td><input id="mdin-${i}-name" value="${esc(r.name)}" oninput="fxMark(this)" onchange="editIng(${i},'name',this.value)"></td>
+      <td><input id="mdin-${i}-w" value="${esc(r.w)}" oninput="fxMark(this)" onchange="editIng(${i},'w',this.value)" style="max-width:90px"></td>
+      <td><input id="mdin-${i}-o" value="${esc(r.o)}" oninput="fxMark(this)" onchange="editIng(${i},'o',this.value)"></td>
+      <td><input id="mdin-${i}-p" value="${esc(r.p)}" oninput="fxMark(this)" onchange="editIng(${i},'p',this.value)" style="max-width:70px"></td>
+      <td><input id="mdin-${i}-actual" value="${esc(r.actual)}" oninput="fxMark(this)" onchange="editIng(${i},'actual',this.value)" style="max-width:90px"></td>
+      <td><input id="mdin-${i}-note" value="${esc(r.note)}" oninput="fxMark(this)" onchange="editIng(${i},'note',this.value)"></td>
       <td class="mt-status" id="ingstatus-${i}">${ingStatusHTML(i)}</td>
       <td style="text-align:center"><button class="btn-del" title="ลบสารนี้" onclick="delModifyIng(${i})">🗑</button></td>
     </tr>`).join('');
@@ -4041,8 +4047,13 @@ function renderModify(){
   const ingBar = `<div class="abar" style="margin-top:12px">
       <button class="btn btn-s btn-sm" onclick="addModifyIng()">+ เพิ่มสาร</button>
       <span style="font-size:12px;color:var(--muted)">รวม ${modifyIngs.length} รายการ · เพิ่ม / ลบ / แก้ไขได้ แล้วกด ✓ ตรวจ เพื่อยืนยันแต่ละรายการ</span>
+    </div>
+    <div class="fx-bar">
+      <button class="btn btn-p btn-sm" onclick="saveModifyFormula()">บันทึกสูตร</button>
+      <span class="fx-state" id="fxStateMod">บันทึกให้อัตโนมัติทุกครั้งที่ออกจากช่อง — ถ้าไม่แน่ใจ กดบันทึกได้เลย</span>
     </div>`;
 
+  const keepFx = fxSnapFocus(content);
   content.innerHTML = `
     <button class="btn btn-g btn-sm" style="margin-bottom:12px" onclick="backToModifyList()">← กลับไปรายการ</button>
     <div class="db-hdr">
@@ -4060,6 +4071,7 @@ function renderModify(){
   `;
   empty.style.display='none';
   content.style.display='block';
+  fxRestoreFocus(keepFx);
 }
 
 // กล่องบันทึกรายละเอียดหลังปรับแก้สูตรเรียบร้อย (ท้ายหน้า PD Modify Data)
@@ -4167,6 +4179,7 @@ function editIng(i, field, value){
   r.verifiedBy=''; r.verifiedAt='';   // แก้ไปแล้วต้องตรวจสอบใหม่
   applyIngToRecord(i);                // อัพเดตกลับไปที่ record + Dashboard
   refreshIngStatus(i);
+  fxSaved();
 }
 
 // นำค่าที่แก้ในตาราง PD Modify Data กลับไปอัพเดต snapshot ของ record + Dashboard
@@ -4189,6 +4202,25 @@ function applyIngToRecord(i){
   renderRecordsList();
 }
 
+// ปุ่ม "บันทึกสูตร" หน้า PD Modify Data — อ่านทุกช่องในตารางแล้วบันทึกรวดเดียว
+const MD_KEYS = ['name','w','o','p','actual','note'];
+function saveModifyFormula(){
+  if(!requirePerm('editFormula','แก้สูตรได้เฉพาะ Role: Admin, PD')) return;
+  if(!modifyRec) return;
+  let n = 0;
+  modifyIngs.forEach((mi,i)=>{
+    MD_KEYS.forEach(f=>{
+      const el = document.getElementById('mdin-'+i+'-'+f);
+      if(!el) return;
+      if(String(mi[f]==null?'':mi[f]) === el.value) return;
+      editIng(i, f, el.value);
+      n++;
+    });
+  });
+  if(!n){ fxSaved('บันทึกแล้ว — ไม่มีค่าไหนเปลี่ยน'); return; }
+  fxSaved('บันทึกแล้ว ' + n + ' จุด · ' + new Date().toLocaleTimeString('th-TH'));
+}
+
 function verifyIng(i){
   if(!requirePerm('editFormula','ยืนยันการตรวจสารได้เฉพาะ Role: Admin, PD')) return;
   const r = modifyIngs[i];
@@ -4197,6 +4229,55 @@ function verifyIng(i){
   logAct('formula','ยืนยันการตรวจสาร', r.name||'(ไม่มีชื่อ)', modifyRec?modifyRec.id:'');
   refreshIngStatus(i);
 }
+
+// ========== ตัวช่วยกันสูตรที่กำลังพิมพ์หาย ==========
+// เดิมช่องในตารางสูตรบันทึกตอน onchange (คือตอนออกจากช่อง) เท่านั้น
+// ถ้าหน้าจอถูกวาดใหม่ระหว่างพิมพ์ (ซิงก์เข้ามา หรือแก้ช่องก่อนหน้าแล้ววาดใหม่)
+// ช่องเดิมจะถูกทิ้งไปทั้ง element — สิ่งที่พิมพ์ค้างหายเงียบ ๆ ไม่มี event ให้จับ
+// จึงต้องจำช่องที่โฟกัสอยู่ + ค่าที่พิมพ์ค้าง แล้วคืนกลับหลังวาดใหม่เสมอ
+let fxDirtyOn = false;   // มีค่าที่พิมพ์แล้วยังไม่ได้บันทึก
+function fxSnapFocus(wrap){
+  const el = document.activeElement;
+  if(!wrap || !el || !el.id || el.id === 'chatInput') return null;
+  if(el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return null;
+  if(!wrap.contains(el)) return null;
+  let a = null, b = null;
+  try{ a = el.selectionStart; b = el.selectionEnd; }catch(e){}
+  return {id: el.id, v: el.value, s: a, e: b};
+}
+function fxRestoreFocus(k){
+  if(!k) return;
+  const el = document.getElementById(k.id);
+  if(!el) return;
+  if(el.value !== k.v) el.value = k.v;    // ค่าที่พิมพ์ค้างยังไม่ถูกบันทึก ห้ามให้หาย
+  try{ el.focus(); }catch(e){}
+  try{ if(k.s != null) el.setSelectionRange(k.s, k.e); }catch(e){}
+}
+function fxState(text, cls){
+  document.querySelectorAll('.fx-state').forEach(el=>{
+    el.textContent = text;
+    el.classList.remove('warn','ok');
+    if(cls) el.classList.add(cls);
+  });
+}
+// เรียกจาก oninput ของทุกช่องในตารางสูตร — ทำเครื่องหมายว่ายังไม่ได้บันทึก
+function fxMark(el){
+  fxDirtyOn = true;
+  fxState('มีการแก้ไขที่ยังไม่ได้บันทึก — กด "บันทึกสูตร"', 'warn');
+  const tr = el && el.closest ? el.closest('tr') : null;
+  if(tr) tr.classList.add('fx-row-dirty');
+}
+function fxSaved(text){
+  fxDirtyOn = false;
+  document.querySelectorAll('tr.fx-row-dirty').forEach(tr=>tr.classList.remove('fx-row-dirty'));
+  fxState(text || ('บันทึกแล้ว ' + new Date().toLocaleTimeString('th-TH')), 'ok');
+}
+// ปิดหน้าต่างทั้งที่ยังมีของค้าง = เตือนก่อน
+window.addEventListener('beforeunload', function(e){
+  if(!fxDirtyOn) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // ========== CUSTOMER DATA RECORDS (บันทึก + แสดงใน Dashboard) ==========
 let records = [];
@@ -5393,8 +5474,10 @@ function renderChat(){
   // เปิดห้องอยู่ = อ่านแล้ว (กระดิ่งของ User คนนี้หายไป)
   if(c && r && canSeeRecord(r) && markChatSeen(c)) saveChats();
   updateChatBadge();
+  const keepFx = fxSnapFocus(wrap);
   if(c && r && canSeeRecord(r)){
     wrap.innerHTML = chatRoomHTML(c, r);
+    fxRestoreFocus(keepFx);
     const sc = document.getElementById('chatScroll');
     if(sc) sc.scrollTop = atEnd ? sc.scrollHeight : keepTop;
     const ta = document.getElementById('chatInput');
@@ -5734,6 +5817,7 @@ function chatRoomHTML(c, r){
 
 // ---- แก้สูตรจากในห้องแชท (Role: Admin / PD) ----
 const CF_FIELDS = {name:'ชื่อสาร', w:'ปริมาณที่ชั่ง', o:'แหล่งกำเนิด', p:'ความเข้มข้น %', note:'หมายเหตุ'};
+const CF_KEYS = ['name','w','o','p','note'];
 
 // ตารางสูตรแบบแก้ไขได้ — ใช้แทนตารางอ่านอย่างเดียวเมื่อผู้ใช้มีสิทธิ์
 function chatFormulaEditorHTML(r){
@@ -5741,12 +5825,12 @@ function chatFormulaEditorHTML(r){
     <tr>
       <td style="color:var(--muted);text-align:center">${i+1}</td>
       <td style="text-align:center;white-space:nowrap" id="cffda-${i}">${x.fda?x.fda.icon:''}${x.hero?' ⭐':''}</td>
-      <td><input value="${esc(x.name)}" onchange="chatIngEdit('${r.id}',${i},'name',this.value)"></td>
-      <td><input value="${Number(x.w).toFixed(2)}" onchange="chatIngEdit('${r.id}',${i},'w',this.value)" style="max-width:90px"></td>
-      <td><input value="${esc(x.o||'')}" onchange="chatIngEdit('${r.id}',${i},'o',this.value)"></td>
-      <td><input value="${x.p}" onchange="chatIngEdit('${r.id}',${i},'p',this.value)" style="max-width:70px"></td>
+      <td><input id="cfin-${i}-name" value="${esc(x.name)}" oninput="fxMark(this)" onchange="chatIngEdit('${r.id}',${i},'name',this.value)"></td>
+      <td><input id="cfin-${i}-w" value="${Number(x.w).toFixed(2)}" oninput="fxMark(this)" onchange="chatIngEdit('${r.id}',${i},'w',this.value)" style="max-width:90px"></td>
+      <td><input id="cfin-${i}-o" value="${esc(x.o||'')}" oninput="fxMark(this)" onchange="chatIngEdit('${r.id}',${i},'o',this.value)"></td>
+      <td><input id="cfin-${i}-p" value="${x.p}" oninput="fxMark(this)" onchange="chatIngEdit('${r.id}',${i},'p',this.value)" style="max-width:70px"></td>
       <td class="cf-actual" id="cfact-${i}">${Number(x.actual).toFixed(2)}</td>
-      <td><input value="${esc(x.note||'')}" onchange="chatIngEdit('${r.id}',${i},'note',this.value)"></td>
+      <td><input id="cfin-${i}-note" value="${esc(x.note||'')}" oninput="fxMark(this)" onchange="chatIngEdit('${r.id}',${i},'note',this.value)"></td>
       <td style="text-align:center"><button class="btn-del" title="ลบสารนี้" onclick="chatIngDel('${r.id}',${i})">🗑</button></td>
     </tr>`).join('');
   const body = rows || `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:12px">ยังไม่มีสาร — กด “+ เพิ่มสาร”</td></tr>`;
@@ -5763,11 +5847,18 @@ function chatFormulaEditorHTML(r){
         <th style="min-width:130px">Origin</th><th>%</th><th>ได้จริง(mg)</th><th style="min-width:120px">หมายเหตุ</th><th></th></tr></thead>
         <tbody>${body}</tbody>
       </table>
+    </div>
+    <div class="fx-bar">
+      <button class="btn btn-p btn-sm" onclick="saveChatFormula('${r.id}')">บันทึกสูตร</button>
+      <span class="fx-state" id="fxStateChat">บันทึกให้อัตโนมัติทุกครั้งที่ออกจากช่อง — ถ้าไม่แน่ใจ กดบันทึกได้เลย</span>
     </div>`;
 }
 
 // เขียนค่ากลับเข้า record + คำนวณใหม่ + บันทึกลงแชทเป็น log
-function chatSaveFormula(r, logText){
+// defer = ถูกเรียกจากใน event onchange ตอนที่เบราว์เซอร์ยังย้ายโฟกัสไม่เสร็จ
+// ถ้าวาดหน้าใหม่ทันทีตรงนั้น ช่องที่ผู้ใช้กำลังจะกด Tab เข้าไปจะถูกทิ้งไปทั้ง element
+// (เคสจริง: PD พิมพ์ช่องนี้ กด Tab ไปช่องถัดไป แล้วสิ่งที่พิมพ์ต่อหายไปทั้งหมด)
+function chatSaveFormula(r, logText, defer){
   r.rows.forEach((x,i)=>{ x.num = i+1; });
   r.rdUpdated = true;
   const idx = records.findIndex(x=>x.id===r.id);
@@ -5776,30 +5867,60 @@ function chatSaveFormula(r, logText){
   renderDashboard(r);
   const c = getChat(r.id);
   if(c){
-    pushSys(c, logText);
+    (Array.isArray(logText) ? logText : [logText]).forEach(t=>pushSys(c, t));
     touchChatPart(c, currentUser, false);
     saveChats();
   }
   if(modifyRec && modifyRec.id===r.id){ buildModifyData(); }   // ให้หน้า PD Modify เห็นค่าล่าสุด
+  if(defer){ setTimeout(function(){ renderChat(); renderRecordsList(); fxSaved(); }, 0); return; }
   renderChat();
   renderRecordsList();
 }
 
-function chatIngEdit(jobId, i, field, value){
-  const r = records.find(x=>x.id===jobId);
-  if(!r || !r.rows[i]) return;
-  if(!requirePerm('editFormula','แก้สูตรได้เฉพาะ Role: Admin, PD')){ renderChat(); return; }
-  const row = r.rows[i];
+// เขียนค่าลงแถวแล้วคืนรายละเอียดการเปลี่ยน (null = ค่าเท่าเดิม) — ยังไม่บันทึก
+function chatApplyIng(r, i, field, value){
+  const row = (r.rows||[])[i];
+  if(!row) return null;
   const before = (field==='w'||field==='p') ? Number(row[field]).toFixed(2) : String(row[field]||'');
   if(field==='w' || field==='p') row[field] = parseFloat(value)||0;
   else row[field] = value;
   row.actual = row.w * row.p / 100;
   row.fda = checkFDA(row.name||'', row.actual);
   const after = (field==='w'||field==='p') ? Number(row[field]).toFixed(2) : String(row[field]||'');
-  if(before === after) return;
-  const msg = `${currentUser} แก้สูตร: ${row.name||'(ไม่มีชื่อ)'} · ${CF_FIELDS[field]} ${before||'—'} → ${after||'—'}`;
-  logAct('formula','แก้สูตรในห้องแชท', `${row.name||'(ไม่มีชื่อ)'} · ${CF_FIELDS[field]}: ${before||'—'} → ${after||'—'}`, r.id);
-  chatSaveFormula(r, msg);
+  if(before === after) return null;
+  return {
+    msg: `${currentUser} แก้สูตร: ${row.name||'(ไม่มีชื่อ)'} · ${CF_FIELDS[field]} ${before||'—'} → ${after||'—'}`,
+    detail: `${row.name||'(ไม่มีชื่อ)'} · ${CF_FIELDS[field]}: ${before||'—'} → ${after||'—'}`
+  };
+}
+function chatIngEdit(jobId, i, field, value){
+  const r = records.find(x=>x.id===jobId);
+  if(!r || !r.rows[i]) return;
+  if(!requirePerm('editFormula','แก้สูตรได้เฉพาะ Role: Admin, PD')){ renderChat(); return; }
+  const ch = chatApplyIng(r, i, field, value);
+  if(!ch){ fxSaved('บันทึกแล้ว — ไม่มีค่าไหนเปลี่ยน'); return; }
+  logAct('formula','แก้สูตรในห้องแชท', ch.detail, r.id);
+  chatSaveFormula(r, ch.msg, true);
+  fxSaved();
+}
+// ปุ่ม "บันทึกสูตร" — อ่านค่าจากทุกช่องในตารางแล้วบันทึกรวดเดียว
+// ไม่ต้องรอให้ออกจากช่องก่อน จึงไม่มีทางที่ค่าที่พิมพ์ค้างจะหลุด
+function saveChatFormula(jobId){
+  const r = records.find(x=>x.id===jobId);
+  if(!r) return;
+  if(!requirePerm('editFormula','แก้สูตรได้เฉพาะ Role: Admin, PD')) return;
+  const msgs = [];
+  (r.rows||[]).forEach((row,i)=>{
+    CF_KEYS.forEach(f=>{
+      const el = document.getElementById('cfin-'+i+'-'+f);
+      if(!el) return;
+      const ch = chatApplyIng(r, i, f, el.value);
+      if(ch){ msgs.push(ch.msg); logAct('formula','แก้สูตรในห้องแชท (กดบันทึก)', ch.detail, r.id); }
+    });
+  });
+  if(!msgs.length){ fxSaved('บันทึกแล้ว — ไม่มีค่าไหนเปลี่ยน'); return; }
+  chatSaveFormula(r, msgs);
+  fxSaved('บันทึกแล้ว ' + msgs.length + ' จุด · ' + new Date().toLocaleTimeString('th-TH'));
 }
 
 function chatIngAdd(jobId){
