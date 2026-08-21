@@ -93,7 +93,7 @@ messages[] = { type:'sys'|'msg', text, ts, ... }
 | `fs_records` | `id` | `records[]` |
 | `fs_chats` | `job_id` | `chats[]` |
 | `fs_users` | `name` | `userList[]` |
-| `fs_activities` | `seq` (+`ts`) | `activities[]` — append only |
+| `fs_activities` | `uid` (+`ts`) | `activities[]` — append only |
 | `fs_meta` | `key` | `reccounter` + นิยาม Tag ที่ key `tags` |
 
 ห้ามแตกฟิลด์ออกเป็นคอลัมน์จริง ห้ามเปลี่ยนชื่อตาราง/คีย์ ห้ามเก็บ `currentUser` / `impersonator` ขึ้นเซิร์ฟเวอร์
