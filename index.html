@@ -241,7 +241,8 @@ input.fi.rec-date{width:auto;min-width:150px;padding:0 12px;height:36px}
    ใช้ !important เพื่อให้ชนะสีของสถานะอื่น (เลือกอยู่ / ยังไม่อ่าน / ลิงก์ในตาราง) เสมอ */
 .job-os{color:var(--os) !important}
 /* งานที่ "ฝ่ายของเรา" กด Pass ไปแล้ว — เลขงานในเมนูซ้ายเป็นเขียวเข้ม
-   (งาน Oversea ยังเป็นสีส้มเสมอ เพราะ .job-os ใช้ !important) */
+   งาน Oversea ต้องเป็นสีส้มเสมอ (เจ้าของโปรเจกต์ยืนยันแล้ว) — .job-os ใช้ !important จึงชนะสีเขียว
+   ห้ามสลับลำดับนี้ */
 .job-mypass{color:var(--grd);font-weight:500}
 .edit-banner{background:var(--tint);border:1px solid #D2E3FC;color:var(--ontint);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px}
 .pass-dot{display:inline-block;background:#E6F4EA;color:#137333;font-size:12px;font-weight:500;padding:3px 10px;border-radius:8px;white-space:nowrap}
