@@ -731,7 +731,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.2</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.3</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -4302,6 +4302,7 @@ let records = [];
 let recCounter = 0;
 let recFromStr = '';   // ฟิลเตอร์ช่วงวันที่ (yyyy-mm-dd)
 let recToStr = '';
+let recUserFilter = '';   // ฟิลเตอร์ผู้สร้างงาน ('' = ทุกคน, '__none__' = งานที่ไม่ระบุผู้สร้าง)
 
 function loadRecords(){
   try{
@@ -4498,6 +4499,29 @@ function applyRecFilter(){
   renderRecordsList();
 }
 
+// ชื่อผู้สร้างที่ไม่มีงานเหลือให้กรองแล้ว ต้องล้างทิ้งก่อนกรอง
+// ถ้าปล่อยไปล้างตอนวาดช่องเลือก ตารางจะว่างเปล่าไปแล้วหนึ่งรอบโดยไม่มีสาเหตุให้ผู้ใช้เห็น
+function normUserFilter(){
+  if(can('ownOnly')){ recUserFilter = ''; return; }
+  if(!recUserFilter) return;
+  if(recUserFilter === '__none__'){ if(!nsCreator()) recUserFilter = ''; return; }
+  if(!creatorList().some(u=>u.name===recUserFilter)) recUserFilter = '';
+}
+// ช่องเลือกผู้สร้างงาน — Role ที่เห็นเฉพาะงานของตนเอง (Sales / Oversea) ถูกล็อกไว้ที่ชื่อตัวเอง
+function userFilterHTML(){
+  if(can('ownOnly')){
+    return `<select class="fi role-select" id="recUser" disabled title="Role นี้เห็นเฉพาะงานของตนเอง">
+      <option>${esc(currentUser||'—')}</option></select>`;
+  }
+  const list = creatorList();
+  const none = nsCreator();
+  return `<select class="fi role-select" id="recUser" onchange="applyUserFilter()" title="กรองงานตามผู้สร้าง">
+    <option value="">ทุกคน (${visibleRecords().length})</option>
+    ${list.map(u=>`<option value="${esc(u.name)}"${u.name===recUserFilter?' selected':''}>${esc(u.name)} (${u.n})</option>`).join('')}
+    ${none?`<option value="__none__"${recUserFilter==='__none__'?' selected':''}>ไม่ระบุผู้สร้าง (${none})</option>`:''}
+  </select>`;
+}
+
 function renderRecordsList(){
   const panel = document.getElementById('recordsPanel');
   const empty = document.getElementById('dashEmpty');
@@ -4512,12 +4536,14 @@ function renderRecordsList(){
   empty.style.display='none';
   panel.style.display='block';
 
+  normUserFilter();
   const mine = visibleRecords();
   const nClosed = mine.filter(r=>r.closed && !r.rejected).length;
   const nRej = mine.filter(r=>r.rejected).length;
   const filtered = mine.filter(r=>{
     const day = ymd(r.createdAt);
-    return (!recFromStr || day>=recFromStr) && (!recToStr || day<=recToStr) && matchStatFilter(r) && matchTagFilter(r);
+    return (!recFromStr || day>=recFromStr) && (!recToStr || day<=recToStr)
+        && matchStatFilter(r) && matchTagFilter(r) && matchUserFilter(r);
   });
 
   _bulkIds = filtered.map(r=>r.id);
@@ -4573,6 +4599,8 @@ function renderRecordsList(){
         <button class="btn btn-s btn-sm" onclick="quickFilter('7d')">7 วัน</button>
         <button class="btn btn-s btn-sm" onclick="quickFilter('month')">เดือนนี้</button>
         <button class="btn btn-g btn-sm" onclick="quickFilter('all')">ทั้งหมด</button>
+        <span class="rec-fl-lbl">ผู้สร้าง</span>
+        ${userFilterHTML()}
         <span class="rec-fl-lbl">Tag</span>
         <select class="fi role-select" id="recTag" onchange="applyTagFilter()">
           <option value="">ทุก Tag</option>
@@ -4707,6 +4735,25 @@ function renderBulkTagBody(){
   };
   bindRow('bulkAddRow', true);
   bindRow('bulkDelRow', false);
+}
+// รายชื่อผู้สร้างงานที่ผู้ใช้คนนี้มองเห็น (เรียงตามชื่อ) — ใช้เติมตัวเลือกในช่องกรอง
+function creatorList(){
+  const seen = {};
+  visibleRecords().forEach(r=>{ const n = (r.createdBy||'').trim(); if(n) seen[n] = (seen[n]||0)+1; });
+  return Object.keys(seen).sort((a,b)=>a.localeCompare(b,'th')).map(n=>({name:n, n:seen[n]}));
+}
+function nsCreator(){ return visibleRecords().filter(r=>!(r.createdBy||'').trim()).length; }
+function applyUserFilter(){
+  const el = document.getElementById('recUser');
+  recUserFilter = el ? el.value : '';
+  recSel = {};            // งานที่เลือกไว้อาจถูกกรองออกไปแล้ว
+  renderRecordsList();
+}
+function matchUserFilter(r){
+  if(!recUserFilter) return true;
+  const n = ((r||{}).createdBy||'').trim();
+  if(recUserFilter === '__none__') return !n;
+  return n === recUserFilter;
 }
 function applyTagFilter(){
   const el = document.getElementById('recTag');
