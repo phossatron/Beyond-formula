@@ -732,7 +732,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.3</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.5</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3721,7 +3721,10 @@ function migrateUserNames(){
 // เปลี่ยนชื่อผู้สร้างงานตามชื่อใหม่ (เรียกหลังโหลด records แล้วเท่านั้น)
 function migrateRecordOwners(){
   let changed = false;
-  records.forEach(r=>{ const nu = USER_RENAMES[r.createdBy]; if(nu){ r.createdBy = nu; changed = true; } });
+  records.forEach(r=>{
+    const nu = USER_RENAMES[r.createdBy];
+    if(nu){ r.createdBy = nu; changed = true; recTouched[r.id] = 1; }   // แก้จริงในเครื่องนี้ ส่งขึ้นได้
+  });
   if(changed) saveRecordsStore();
 }
 // เพิ่มผู้ใช้ที่ยังไม่มีในระบบ (ของเดิมไม่ถูกแตะ) — รหัสผ่านเริ่มต้น 123456
@@ -4319,7 +4322,11 @@ function loadRecords(){
 const RECBAK_KEY = 'fs_recbak';
 const RECBAK_PER = 12;          // เก็บกี่เวอร์ชันต่อ 1 งาน
 const RECBAK_MAX_CHARS = 1500000;   // เพดานรวม กันไม่ให้ localStorage เต็ม
-let recBak = {};                // {รหัสงาน: [{ts, by, why, data}]} ใหม่สุดอยู่หน้าสุด
+let recBak = {};
+// งานที่ "ถูกแก้ในเครื่องนี้จริง ๆ" ระหว่างรอบการทำงานนี้ — ใช้ตัดสินว่ามีสิทธิ์ส่งขึ้นเซิร์ฟเวอร์ไหม
+// สำเนาเก่าที่ค้างใน localStorage ต้องไม่ถูกดันขึ้นไปทับของใหม่บนเซิร์ฟเวอร์ (ดูกฎ 8.5)
+let recTouched = {};
+let recTrackReady = false;   // true เมื่อบันทึกจุดเทียบตั้งต้นตอนเปิดหน้าเว็บเสร็จแล้ว                // {รหัสงาน: [{ts, by, why, data}]} ใหม่สุดอยู่หน้าสุด
 let recLastJson = {};           // สภาพล่าสุดที่บันทึกไว้ ใช้หาว่างานไหนเปลี่ยน
 function loadRecBak(){
   try{ const v = JSON.parse(localStorage.getItem(RECBAK_KEY) || '{}'); recBak = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
@@ -4360,8 +4367,14 @@ function trackRecordVersions(why){
     seen[r.id] = 1;
     const j = JSON.stringify(r);
     const prev = recLastJson[r.id];
-    if(prev === undefined){ recLastJson[r.id] = j; return; }   // เพิ่งเห็นครั้งแรก ไม่มีอะไรให้เก็บ
+    if(prev === undefined){
+      recLastJson[r.id] = j;
+      // งานที่โผล่มาใหม่ "หลัง" เปิดหน้าเว็บเสร็จแล้ว และไม่ได้มาจากเซิร์ฟเวอร์ = เพิ่งสร้างในเครื่องนี้
+      if(recTrackReady && !sbApplying) recTouched[r.id] = 1;
+      return;   // เพิ่งเห็นครั้งแรก ไม่มีอะไรให้เก็บ
+    }
     if(prev === j) return;
+    if(!sbApplying) recTouched[r.id] = 1;   // เปลี่ยนเพราะคนในเครื่องนี้ ไม่ใช่เพราะซิงก์
     try{ bakRecord(JSON.parse(prev), why || 'ข้อมูลถูกเปลี่ยน'); touched++; }catch(e){}
     recLastJson[r.id] = j;
   });
@@ -7552,14 +7565,23 @@ function sbGuardTakeServer(){
   sbGuardClear();
   sbCycle(true);
 }
-async function sbPush(){
+// seed = ยกข้อมูลชุดแรกขึ้นเซิร์ฟเวอร์ที่ยืนยันแล้วว่าว่างเปล่า (ข้ามด่านกันสำเนาเก่า)
+async function sbPush(seed){
   const capBefore = sbCap.msg && sbCap.apv;
   const recUp=[], chtUp=[], usrUp=[], actUp=[], msgUp=[], apvUp=[], apvDel=[];
   const seenR={}, seenC={}, seenU={};
+  const recHeld = [];
   records.forEach(r=>{
     const j = stableStr(r); seenR[r.id]=1;
-    if(sbSnap.records[r.id] !== j) recUp.push({id:r.id, data:r});
+    const snap = sbSnap.records[r.id];
+    if(snap === j) return;                       // ตรงกับเซิร์ฟเวอร์อยู่แล้ว
+    // ไม่มีฐานเทียบ (รอบนี้ยังไม่เคยดึงงานใบนี้ลงมา) และไม่มีใครแก้ในเครื่องนี้
+    // = เป็นสำเนาเก่าที่ค้างอยู่ ห้ามดันขึ้นไปทับของบนเซิร์ฟเวอร์เด็ดขาด
+    // เคสจริงที่เคยเกิด: A00798 ถูกเขียนทับด้วยค่าก่อนแก้ 24 จุด โดยไม่มีใครแตะงานนั้นเลย
+    if(snap === undefined && !recTouched[r.id] && !seed){ recHeld.push(r.id); return; }
+    recUp.push({id:r.id, data:r});
   });
+  if(recHeld.length) console.warn('[sync] ไม่ส่งสำเนาเก่าที่ไม่มีใครแก้ในเครื่องนี้ขึ้นเซิร์ฟเวอร์:', recHeld.join(', '));
   chats.forEach(c=>{
     seenC[c.jobId]=1;
     const pay = chatPayload(c), j = stableStr(pay);
@@ -7616,7 +7638,7 @@ async function sbPush(){
      && !apvUp.length && !apvDel.length && !recDel.length && !chtDel.length && !usrDel.length && !counterUp && !tagsUp) return false;
 
   await sbUpsert('fs_records', recUp);
-  recUp.forEach(x=>{ sbSnap.records[x.id] = stableStr(x.data); });
+  recUp.forEach(x=>{ sbSnap.records[x.id] = stableStr(x.data); delete recTouched[x.id]; });
   // ส่งข้อความและการอนุมัติ "ก่อน" อัปเดตข้อมูลห้อง
   // ถ้าเน็ตหลุดคาระหว่างสองคำสั่ง ข้อมูลห้องเดิมที่ยังมีข้อความอยู่จะไม่ถูกเขียนทับไปก่อน
   if(msgUp.length && await sbTry('msg', async ()=>{ await sbUpsert('fs_messages', msgUp); return true; }, false)){
@@ -7711,12 +7733,17 @@ async function sbCycle(urgent){
   if(sbCycleRunning){ if(urgent) sbCycleAgain = true; return; }
   sbCycleRunning = true; sbBusy = true; sbChip();
   try{
-    const pushed = await sbPush();
+    // ยังไม่เคยดึงข้อมูลลงมาสำเร็จสักครั้ง (เช่น ตอนเปิดหน้าเว็บเน็ตหลุด) → ห้ามส่งขึ้นเด็ดขาด
+    // ตอนนั้น sbSnap ยังว่าง ทุกงานจะดูเหมือน "ของใหม่" แล้วสำเนาเก่าใน localStorage
+    // จะถูกดันขึ้นไปทับของจริงบนเซิร์ฟเวอร์ทั้งชุด — เคสจริงที่เคยเกิดมาแล้วสองครั้ง
+    const pushed = sbReady ? await sbPush() : false;
     // เลือก "ใช้ของจากเซิร์ฟเวอร์" ต้องดึงทั้งหมด ไม่งั้นรอบ delta จะไม่มีอะไรกลับมาทับของในเครื่อง
-    const full = sbGuardTake || (Date.now() - sbLastFull) >= SB_FULL_MS;
+    // และถ้ายังไม่เคยดึงสำเร็จ ต้องดึงทั้งหมดเสมอ เพื่อให้ได้ฐานเทียบครบก่อนส่งขึ้นรอบหน้า
+    const full = !sbReady || sbGuardTake || (Date.now() - sbLastFull) >= SB_FULL_MS;
     if(full) sbLastFull = Date.now();
     sbCycleN++;
     const changed = sbApply(await sbPull(full));
+    if(full) sbReady = true;   // ดึงครบแล้ว มีฐานเทียบแล้ว ส่งขึ้นได้ตั้งแต่นี้ไป
     // มีอะไรขยับ (เราส่งขึ้น หรือคนอื่นส่งมา) = ยังคุยกันอยู่ ให้กลับไปรอบไว
     if(pushed || changed) sbTouchBusy();
     sbErr = '';
@@ -7754,7 +7781,7 @@ async function sbBoot(){
     if(d.empty && (records.length || chats.length || userList.length)){
       // เซิร์ฟเวอร์ยังว่าง แต่เครื่องนี้มีข้อมูลอยู่ → ยกข้อมูลชุดแรกขึ้นไปตั้งต้น
       sbReady = true;
-      await sbPush();
+      await sbPush(true);      // seed: ยืนยันแล้วว่าเซิร์ฟเวอร์ว่างจริง จึงยกของในเครื่องขึ้นได้
       sbApply(await sbPull(true));
     } else {
       sbApply(d);
@@ -7768,7 +7795,8 @@ async function sbBoot(){
     console.warn('[sync] เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ใช้ข้อมูลในเครื่องต่อไป:', sbErr);
   }
   sbChip();
-  sbLastFull = Date.now();
+  // ดึงไม่สำเร็จ = ยังไม่มีฐานเทียบ ต้องให้รอบถัดไปดึงทั้งหมดใหม่ ห้ามปล่อยให้ไปดึงแบบ delta
+  sbLastFull = sbReady ? Date.now() : 0;
   sbSchedule();
   // กลับมาที่แท็บนี้ = ซิงก์ทันที ไม่ต้องรอรอบถัดไป
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ sbTouchBusy(); sbCycle(true); } });
@@ -7802,6 +7830,7 @@ loadRecBak();
 loadRecords();
 migrateRecordOwners();
 trackRecordVersions('เปิดหน้าเว็บ');   // ตั้งจุดเทียบตั้งต้น ยังไม่เก็บอะไร
+recTrackReady = true;     // ตั้งแต่นี้ไป งานที่เปลี่ยนคือคนในเครื่องนี้แก้จริง ไม่ใช่ของค้างเก่า
 cleanJunkTags();          // ล้าง Tag ขยะจากบั๊กเก่า — ต้องอยู่หลัง loadRecords() เสมอ
 loadChats();
 updateChatBadge();
