@@ -14,7 +14,7 @@
   --or:#1A73E8;--or2:#1765CC;--navy:#F8F9FA;--card:#FFFFFF;--card2:#F1F3F4;
   --bd:#DADCE0;--tx:#202124;--muted:#5F6368;--ye:#B06000;--gr:#1E8E3E;
   --re:#D93025;--bl:#1A73E8;--pu:#0B57D0;
-  --line:#E8EAED;--tint:#E8F0FE;--tint2:#D3E3FD;--ontint:#0B57D0;--os:#E8710A;
+  --line:#E8EAED;--tint:#E8F0FE;--tint2:#D3E3FD;--ontint:#0B57D0;--os:#E8710A;--grd:#0D652D;
   --el1:0 1px 2px 0 rgba(60,64,67,.3),0 1px 3px 1px rgba(60,64,67,.15);
   --el2:0 1px 3px 0 rgba(60,64,67,.3),0 4px 8px 3px rgba(60,64,67,.15);
   --el3:0 11px 15px -7px rgba(60,64,67,.2),0 24px 38px 3px rgba(60,64,67,.14);
@@ -240,6 +240,9 @@ input.fi.rec-date{width:auto;min-width:150px;padding:0 12px;height:36px}
 /* งานที่ตลาดปลายทางเป็น Oversea — เลขงานเป็นสีส้มทุกที่ที่แสดง
    ใช้ !important เพื่อให้ชนะสีของสถานะอื่น (เลือกอยู่ / ยังไม่อ่าน / ลิงก์ในตาราง) เสมอ */
 .job-os{color:var(--os) !important}
+/* งานที่ "ฝ่ายของเรา" กด Pass ไปแล้ว — เลขงานในเมนูซ้ายเป็นเขียวเข้ม
+   (งาน Oversea ยังเป็นสีส้มเสมอ เพราะ .job-os ใช้ !important) */
+.job-mypass{color:var(--grd);font-weight:500}
 .edit-banner{background:var(--tint);border:1px solid #D2E3FC;color:var(--ontint);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px}
 .pass-dot{display:inline-block;background:#E6F4EA;color:#137333;font-size:12px;font-weight:500;padding:3px 10px;border-radius:8px;white-space:nowrap}
 .pass-none{color:var(--muted);font-size:14px}
@@ -728,7 +731,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.2</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -2885,6 +2888,21 @@ function canApprove(key){
   if(!r) return false;
   const a = r.can.approve;
   return a==='*' || (Array.isArray(a) && a.indexOf(key)>=0);
+}
+// ฝ่ายที่ Role ปัจจุบันเป็นคนกด Pass (Admin ที่อนุมัติได้ทุกฝ่าย = ครบทั้ง 4)
+function myApproveKeys(){
+  const r = ROLES[currentRole()];
+  if(!r) return [];
+  const a = r.can.approve;
+  if(a === '*') return CHAT_PARTS.map(p=>p.key);
+  return Array.isArray(a) ? a.slice() : [];
+}
+// งานใบนี้ "ฝ่ายของเรา" กด Pass ครบแล้วหรือยัง — Role ที่ไม่มีหน้าที่อนุมัติคืน false เสมอ
+function myPassDone(c){
+  if(!c || !currentUser) return false;
+  const keys = myApproveKeys();
+  if(!keys.length) return false;
+  return keys.every(k => !!(c.approvals||{})[k]);
 }
 // ตรวจสิทธิ์ก่อนทำงาน — ไม่ผ่านจะแจ้งเตือนพร้อมบอก Role ปัจจุบัน
 function requirePerm(cap, what){
@@ -5317,7 +5335,9 @@ function renderChatMenu(){
     const nm = r ? (r.brand || r.customer || '') : '';
     const owner = shortSalesName(r && r.salesOwner);
     const tg = recordTags(r);
+    const mine = myPassDone(c);
     const tip = c.jobId + (nm?' — '+nm:'') + (owner?' · Sales '+owner:'') + ' · อนุมัติ ' + done + '/' + NPARTS
+      + (mine?' · ฝ่ายของคุณ Pass แล้ว':'')
       + (marketText(r)?' · '+marketText(r):'')
       + (tg.length?' · Tag: '+tg.map(t=>t.name).join(', '):'') + (un?' · มีอัพเดทใหม่':'');
     // จุดสีของ Tag ต่อท้ายรหัสงาน (เกิน 3 อันแสดงเป็น +N)
@@ -5327,7 +5347,7 @@ function renderChatMenu(){
       </span>` : '';
     return `<button class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip)}">
       <span class="side-bell${un?'':' off'}">🔔</span>
-      <span class="job-id${oseaCls(r)}">${esc(c.jobId)}</span>
+      <span class="job-id${mine?' job-mypass':''}${oseaCls(r)}">${esc(c.jobId)}</span>
       ${tagDots}
       ${owner?`<span class="side-own">${esc(owner)}</span>`:''}
       <span class="side-ap${done===NPARTS?' full':''}">${done}/${NPARTS}</span>
