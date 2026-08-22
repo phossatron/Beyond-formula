@@ -732,7 +732,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.5</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-22.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -3481,6 +3481,20 @@ function loginFormHTML(){
     <button class="btn btn-p login-btn" onclick="doLogin()">เข้าใช้งาน</button>
     <div class="login-hint">ลืมรหัสผ่าน — ติดต่อผู้ดูแลระบบ (Role Admin) เพื่อรีเซ็ตรหัสให้ใหม่</div>`;
 }
+function loginOfflineHTML(){
+  return `
+    <div class="login-wait">เชื่อมต่อเซิร์ฟเวอร์กลางไม่ได้</div>
+    <div class="login-hint" style="margin-top:10px">${esc(sbErr)}</div>
+    <button class="btn btn-p login-btn" style="margin-top:16px" onclick="retryBoot()">ลองเชื่อมต่ออีกครั้ง</button>
+    <div class="login-hint">ข้อมูลที่บันทึกไว้แล้วยังอยู่ครบ — ถ้ายังไม่หาย ให้แจ้งผู้ดูแลระบบ</div>`;
+}
+function retryBoot(){
+  if(typeof sbBoot !== 'function') return;
+  sbErr = '';
+  _lgMode = null;          // บังคับให้วาดใหม่ ไม่ว่าผลรอบนี้จะออกมาเป็นโหมดไหน
+  renderLoginView();
+  sbBoot();
+}
 function firstAdminHTML(){
   return `
     <div class="modal-desc" style="margin-bottom:16px">ยังไม่มีผู้ใช้ในระบบ — สร้างผู้ใช้คนแรก ซึ่งจะได้สิทธิ์ Admin</div>
@@ -3517,12 +3531,16 @@ function renderLoginView(){
   ov.style.display = 'flex';
   // ระหว่างรอข้อมูลผู้ใช้จากเซิร์ฟเวอร์ อย่าเพิ่งชวนสร้าง Admin คนแรก
   const waiting = (typeof sbOn === 'function' && sbOn() && typeof sbReady !== 'undefined' && !sbReady);
-  const mode = userList.length ? 'login' : (waiting ? 'wait' : 'first');
+  // เชื่อมต่อไม่สำเร็จ ต้องบอกให้เห็นและให้กดลองใหม่ได้
+  // ไม่ใช่ค้างอยู่ที่ "กำลังเชื่อมต่อ…" เงียบ ๆ โดยไม่มีทางไปต่อ
+  const failed = waiting && typeof sbErr !== 'undefined' && !!sbErr;
+  const mode = userList.length ? 'login' : (failed ? 'offline' : (waiting ? 'wait' : 'first'));
   if(mode === _lgMode) return;
   _lgMode = mode;
   document.getElementById('loginBody').innerHTML =
-    mode === 'login' ? loginFormHTML() :
-    mode === 'first' ? firstAdminHTML() :
+    mode === 'login'   ? loginFormHTML() :
+    mode === 'first'   ? firstAdminHTML() :
+    mode === 'offline' ? loginOfflineHTML() :
     '<div class="login-wait">กำลังเชื่อมต่อเซิร์ฟเวอร์…</div>';
   setTimeout(function(){
     const el = document.getElementById(mode === 'first' ? 'lgNewName' : 'lgUser');
@@ -7795,6 +7813,12 @@ async function sbBoot(){
     console.warn('[sync] เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ใช้ข้อมูลในเครื่องต่อไป:', sbErr);
   }
   sbChip();
+  // ผลของรอบนี้ต้องไปถึงหน้าจอด้วย ไม่ใช่แค่ชิปมุมจอ:
+  // ตอนที่ยังไม่มีใครเข้าใช้งาน โอเวอร์เลย์ Login คลุมเต็มจนมองไม่เห็นชิป
+  // และ renderLoginView ถูกเรียกจาก renderUserUI ที่เดียว ซึ่งไม่ได้ทำงานหลังซิงก์
+  // ผลคือเบราว์เซอร์ที่ยังไม่มีข้อมูลในเครื่องจะค้างที่ "กำลังเชื่อมต่อ…" ตลอดไป
+  // ทั้งตอนที่เชื่อมต่อไม่ได้ และตอนที่เชื่อมต่อกลับมาได้แล้วด้วย
+  if(typeof renderLoginView === 'function') renderLoginView();
   // ดึงไม่สำเร็จ = ยังไม่มีฐานเทียบ ต้องให้รอบถัดไปดึงทั้งหมดใหม่ ห้ามปล่อยให้ไปดึงแบบ delta
   sbLastFull = sbReady ? Date.now() : 0;
   sbSchedule();
