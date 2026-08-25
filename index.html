@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-10.6</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-25.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -4292,7 +4292,8 @@ function saveJobSection(jobId, key){
   logAct('job','แก้ไขชุดข้อมูล ('+s.title+')', changes.join(' | '), r.id);
   const c = getChat(r.id);
   if(c){
-    changes.forEach(t=>pushSys(c, (currentUser||'ผู้ใช้')+' แก้ '+s.title+' — '+t));
+    invalidateChatApprovals(c);
+    changes.forEach(t=>pushSys(c, (currentUser||'ผู้ใช้')+' แก้ '+s.title+' — '+t, {action:'job_edit'}));
     touchChatPart(c, currentUser, false); saveChats();
   }
   closeGModal();
@@ -4461,6 +4462,9 @@ function openRecordPopup(id){
 let chats = [];          // [{jobId, createdAt, createdBy, messages:[], parts:[], approvals:{}}]
 let chatOpenId = null;   // รหัสงานที่เปิดอยู่ (null = แสดงรายการห้องแชท)
 let chatJobOpen = true;  // เปิด/ปิดกล่องรายละเอียด Job ในห้องแชท
+let chatEventOutbox = [];
+let chatReadOutbox = [];
+let chatDeleteOutbox = [];
 
 const CHAT_PARTS = [
   {key:'pd', label:'PD Pass', desc:'ฝ่ายพัฒนาผลิตภัณฑ์'},
@@ -4475,8 +4479,48 @@ function loadChats(){
   try{ chats = JSON.parse(localStorage.getItem('fs_chats') || '[]'); }
   catch(e){ chats = []; }
   chats.forEach(c=>{ c.messages=c.messages||[]; c.parts=c.parts||[]; c.approvals=c.approvals||{}; });
+  try{ chatEventOutbox = JSON.parse(localStorage.getItem('fs_chat_event_outbox') || '[]'); }
+  catch(e){ chatEventOutbox = []; }
+  try{ chatReadOutbox = JSON.parse(localStorage.getItem('fs_chat_read_outbox') || '[]'); }
+  catch(e){ chatReadOutbox = []; }
+  try{ chatDeleteOutbox = JSON.parse(localStorage.getItem('fs_chat_delete_outbox') || '[]'); }
+  catch(e){ chatDeleteOutbox = []; }
 }
 function saveChats(){ try{ localStorage.setItem('fs_chats', JSON.stringify(chats)); }catch(e){}
+  sbQueue();
+}
+function sbChatEventsOn(){ return !!(sbOn() && authSession); }
+function chatEventId(){
+  if(window.crypto && typeof window.crypto.randomUUID==='function') return window.crypto.randomUUID();
+  return 'evt-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
+function saveChatOutboxes(){
+  try{
+    localStorage.setItem('fs_chat_event_outbox', JSON.stringify(chatEventOutbox));
+    localStorage.setItem('fs_chat_read_outbox', JSON.stringify(chatReadOutbox));
+    localStorage.setItem('fs_chat_delete_outbox', JSON.stringify(chatDeleteOutbox));
+  }catch(e){}
+}
+function queueChatEvent(jobId, payload, eventId){
+  if(!sbChatEventsOn() || !jobId || !payload) return null;
+  const id = eventId || chatEventId();
+  if(!chatEventOutbox.some(x=>x.eventId===id))
+    chatEventOutbox.push({eventId:id, jobId, payload:Object.assign({},payload)});
+  saveChatOutboxes();
+  sbQueue();
+  return id;
+}
+function queueChatSeen(jobId, seenTs){
+  if(!sbChatEventsOn() || !jobId) return;
+  chatReadOutbox = chatReadOutbox.filter(x=>x.jobId!==jobId);
+  chatReadOutbox.push({jobId, seenTs:Number(seenTs)||0});
+  saveChatOutboxes();
+  sbQueue();
+}
+function queueChatDelete(jobId){
+  if(!sbChatEventsOn() || !jobId) return;
+  if(!chatDeleteOutbox.includes(jobId)) chatDeleteOutbox.push(jobId);
+  saveChatOutboxes();
   sbQueue();
 }
 function getChat(jobId){ return chats.find(c=>c.jobId===jobId) || null; }
@@ -4502,6 +4546,7 @@ function markChatSeen(c){
   if(!c.seen) c.seen = {};
   if((c.seen[currentUser]||0) >= chatLastTs(c)) return false;
   c.seen[currentUser] = Date.now();
+  queueChatSeen(c.jobId, c.seen[currentUser]);
   return true;
 }
 function renderChatMenu(){
@@ -4556,8 +4601,17 @@ function touchChatPart(c, name, isMsg){
   if(isMsg) p.msgs++;
   return p;
 }
-function pushSys(c, text){
+function invalidateChatApprovals(c){
+  if(!c) return false;
+  const changed = CHAT_PARTS.some(p=>c.approvals[p.key]);
+  if(changed) CHAT_PARTS.forEach(p=>{ c.approvals[p.key] = null; });
+  return changed;
+}
+function pushSys(c, text, opt){
+  const o = opt || {};
   c.messages.push({type:'sys', user:currentUser||'', text, ts:Date.now()});
+  if(!o.skipQueue && !sbApplying && sbChatEventsOn())
+    queueChatEvent(c.jobId, {type:'system', action:o.action||'chat_created', text});
 }
 
 // สร้างห้องแชทตามรหัสงาน
@@ -4570,7 +4624,7 @@ function createChat(jobId){
     jobId, createdAt: Date.now(), createdBy: currentUser||'',
     messages: [], parts: [], approvals: {pd:null, ra:null, rd:null}
   };
-  pushSys(c, `สร้างห้องแชทงาน ${jobId} — ${r.brand||r.customer||'Formula'}${currentUser?` โดย ${currentUser}`:''}`);
+  pushSys(c, `สร้างห้องแชทงาน ${jobId} — ${r.brand||r.customer||'Formula'}${currentUser?` โดย ${currentUser}`:''}`, {action:'chat_created'});
   chats.unshift(c);
   logAct('chat','สร้างห้องแชท', (r.brand||r.customer||''), jobId);
   touchChatPart(c, currentUser, false);
@@ -4591,6 +4645,7 @@ function deleteChat(jobId){
   if(!confirm(`ลบห้องแชทของงาน ${jobId}? ประวัติการสนทนาทั้งหมดจะหายไป`)) return;
   logAct('chat','ลบห้องแชท', 'ลบประวัติการสนทนาทั้งหมด', jobId);
   chats = chats.filter(c=>c.jobId!==jobId);
+  queueChatDelete(jobId);
   saveChats(); updateChatBadge();
   chatOpenId = null;
   renderChat(); renderRecordsList();
@@ -4990,7 +5045,8 @@ function chatSaveFormula(r, logText){
   renderDashboard(r);
   const c = getChat(r.id);
   if(c){
-    pushSys(c, logText);
+    invalidateChatApprovals(c);
+    pushSys(c, logText, {action:'formula_change'});
     touchChatPart(c, currentUser, false);
     saveChats();
   }
@@ -5075,7 +5131,7 @@ function doCloseJob(r){
   const idx = records.findIndex(x=>x.id===r.id);
   if(idx>=0){ records[idx]=r; saveRecordsStore(); }
   const c = getChat(r.id);
-  if(c){ pushSys(c, `${currentUser} ปิดงาน (Close job)`); touchChatPart(c, currentUser, false); saveChats(); }
+  if(c){ pushSys(c, `${currentUser} ปิดงาน (Close job)`, {action:'close_job'}); touchChatPart(c, currentUser, false); saveChats(); }
   updateChatBadge();          // เอารหัสงานออกจากเมนูซ้ายทันที
   renderChat(); renderRecordsList();
 }
@@ -5094,7 +5150,7 @@ function doReopenJob(r){
   const idx = records.findIndex(x=>x.id===r.id);
   if(idx>=0){ records[idx]=r; saveRecordsStore(); }
   const c = getChat(r.id);
-  if(c){ pushSys(c, `${currentUser} เปิดงานอีกครั้ง`); touchChatPart(c, currentUser, false); saveChats(); }
+  if(c){ pushSys(c, `${currentUser} เปิดงานอีกครั้ง`, {action:'reopen_job'}); touchChatPart(c, currentUser, false); saveChats(); }
   updateChatBadge();          // รหัสงานกลับเข้าเมนูซ้ายทันที
   renderChat(); renderRecordsList();
 }
@@ -5112,6 +5168,7 @@ function sendChatMsg(){
   c.messages.push({type:'msg', user:currentUser, text, ts:Date.now()});
   logAct('chat','ส่งข้อความ', text.length>160 ? text.slice(0,160)+'…' : text, c.jobId);
   touchChatPart(c, currentUser, true);
+  queueChatEvent(c.jobId, {type:'message', text});
   saveChats();
   renderChat();
   const nta = document.getElementById('chatInput');
@@ -5133,13 +5190,15 @@ function toggleChatApprove(jobId, key){
     if(!confirm(`ยกเลิกการอนุมัติ ${part.label}?\n(อนุมัติโดย ${a.by||'-'} · ${a.at})`)) return;
     c.approvals[key] = null;
     logAct('approve','ยกเลิกการอนุมัติ '+part.label, 'อนุมัติเดิมโดย '+(a.by||'-')+' · '+a.at, jobId);
-    pushSys(c, `${currentUser} ยกเลิกการอนุมัติ ${part.label}`);
+    pushSys(c, `${currentUser} ยกเลิกการอนุมัติ ${part.label}`, {skipQueue:true});
+    queueChatEvent(c.jobId, {type:'approval_revoke', key});
   } else {
     c.approvals[key] = {by: currentUser, at: new Date().toLocaleString('th-TH'), ts: Date.now()};
     logAct('approve','อนุมัติ '+part.label, 'ครบ '+CHAT_PARTS.filter(p=>c.approvals[p.key]).length+'/'+NPARTS+' ฝ่าย', jobId);
-    pushSys(c, `${currentUser} อนุมัติ ${part.label} ✓`);
+    pushSys(c, `${currentUser} อนุมัติ ${part.label} ✓`, {skipQueue:true});
+    queueChatEvent(c.jobId, {type:'approval_set', key});
     if(CHAT_PARTS.every(p=>c.approvals[p.key]))
-      pushSys(c, 'อนุมัติครบทุกฝ่ายแล้ว — สามารถ Export Excel ได้');
+      pushSys(c, 'อนุมัติครบทุกฝ่ายแล้ว — สามารถ Export Excel ได้', {skipQueue:true});
   }
   touchChatPart(c, currentUser, false);
   saveChats();
@@ -5205,7 +5264,7 @@ async function exportChatExcel(jobId){
   c.exports = (c.exports || 0) + 1;
   c.lastExportBy = currentUser || '';
   c.lastExportAt = new Date().toLocaleString('th-TH');
-  pushSys(c, `${currentUser || 'ผู้ใช้'} ส่งออกไฟล์ Excel (${r.id})`);
+  pushSys(c, `${currentUser || 'ผู้ใช้'} ส่งออกไฟล์ Excel (${r.id})`, {action:'export'});
   touchChatPart(c, currentUser, false);
   saveChats();
   renderChat();
@@ -6156,7 +6215,9 @@ function sbApply(d){
   sbApplying = true;
   try{
     records = sbMergeObjects(records,d.records,'id',prior.records).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-    chats   = sbMergeObjects(chats,d.chats,'jobId',prior.chats).sort((a,b)=>chatLastTs(b)-chatLastTs(a));
+    const secureChatAuthoritative = sbChatEventsOn() && !chatEventOutbox.length && !chatDeleteOutbox.length;
+    chats   = (secureChatAuthoritative ? (d.chats||[]) : sbMergeObjects(chats,d.chats,'jobId',prior.chats))
+      .sort((a,b)=>chatLastTs(b)-chatLastTs(a));
     chats.forEach(c=>{ c.messages=c.messages||[]; c.parts=c.parts||[]; c.approvals=c.approvals||{}; });
     if(currentRole()==='admin'){
       const actMap={};
@@ -6207,35 +6268,75 @@ function sbSnapshot(){
   sbPersistSnapshot();
 }
 
+async function sbPushChatEvents(){
+  if(!sbChatEventsOn() || !chatEventOutbox.length) return false;
+  let changed = false;
+  for(const item of chatEventOutbox.slice()){
+    await sbReq('rpc/fs_append_chat_event', {
+      method:'POST',
+      body:{p_event_id:item.eventId,p_job_id:item.jobId,p_payload:item.payload}
+    });
+    chatEventOutbox = chatEventOutbox.filter(x=>x.eventId!==item.eventId);
+    saveChatOutboxes();
+    changed = true;
+  }
+  return changed;
+}
+async function sbPushChatReads(){
+  if(!sbChatEventsOn() || !chatReadOutbox.length) return false;
+  for(const item of chatReadOutbox.slice()){
+    await sbReq('rpc/fs_mark_chat_seen', {
+      method:'POST', body:{p_job_id:item.jobId,p_seen_ts:item.seenTs}
+    });
+    chatReadOutbox = chatReadOutbox.filter(x=>x.jobId!==item.jobId);
+    saveChatOutboxes();
+  }
+  return true;
+}
+async function sbPushChatDeletes(){
+  if(!sbChatEventsOn() || !chatDeleteOutbox.length) return false;
+  for(const jobId of chatDeleteOutbox.slice()){
+    await sbReq('rpc/fs_delete_chat', {method:'POST',body:{p_job_id:jobId}});
+    chatDeleteOutbox = chatDeleteOutbox.filter(x=>x!==jobId);
+    saveChatOutboxes();
+  }
+  return true;
+}
+
 // ---------- ส่งเฉพาะสิ่งที่เปลี่ยนขึ้นเซิร์ฟเวอร์ ----------
 async function sbPush(){
   const recUp = [], chtUp = [], usrUp = [], actUp = [];
   const seenR = {}, seenC = {}, seenU = {};
+  const secureChatEvents = sbChatEventsOn();
+  const chatEventsPushed = secureChatEvents ? await sbPushChatEvents() : false;
+  const chatReadsPushed = secureChatEvents ? await sbPushChatReads() : false;
+  const chatDeletesPushed = secureChatEvents ? await sbPushChatDeletes() : false;
   records.forEach(r=>{ const j = JSON.stringify(r); seenR[r.id]=1;
     if(sbSnap.records[r.id] !== j) recUp.push({id:r.id, data:r}); });
   chats.forEach(c=>{ const j = JSON.stringify(c); seenC[c.jobId]=1;
-    if(sbSnap.chats[c.jobId] !== j) chtUp.push({job_id:c.jobId, data:c}); });
+    if(!secureChatEvents && sbSnap.chats[c.jobId] !== j) chtUp.push({job_id:c.jobId, data:c}); });
   // Secure-mode user lifecycle is Dashboard/membership-owned; browser is read-only.
   userList.forEach(u=>{ seenU[u.name]=1; });
   // ลบเฉพาะรายการที่เคยอยู่บนเซิร์ฟเวอร์แล้วถูกลบในเครื่องนี้จริง
   const recDel = Object.keys(sbSnap.records).filter(k=>!seenR[k]);
-  const chtDel = Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
+  const chtDel = secureChatEvents ? [] : Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
   const usrDel = [];
   activities.filter(e=>currentRole()==='admin' || (e.user===currentUser && !e.via))
     .forEach(e=>{ const u = actUid(e); if(!sbSnap.acts[u]) actUp.push({uid:u, ts:e.ts||0, data:e}); });
   const counterUp = sbSnap.counter !== recCounter;
   if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length
-     && !recDel.length && !chtDel.length && !usrDel.length && !counterUp) return false;
+     && !recDel.length && !chtDel.length && !usrDel.length && !counterUp
+     && !chatEventsPushed && !chatReadsPushed && !chatDeletesPushed) return false;
 
   await sbUpsert('fs_records', recUp);
-  await sbUpsert('fs_chats', chtUp);
+  if(!secureChatEvents) await sbUpsert('fs_chats', chtUp);
   await sbUpsert('fs_users', usrUp);
   if(actUp.length){
     await sbUpsert('fs_activities', actUp, 'resolution=ignore-duplicates');
     actUp.forEach(a=>{ sbSnap.acts[a.uid] = 1; });
   }
   await sbDelete('fs_records', 'id', recDel);
-  await sbDelete('fs_chats', 'job_id', chtDel);
+  if(!secureChatEvents) await sbDelete('fs_chats', 'job_id', chtDel);
   await sbDelete('fs_users', 'name', usrDel);
   if(counterUp) await sbUpsert('fs_meta', [{key:'reccounter', value:recCounter}]);
   sbSnapshot();

@@ -62,6 +62,9 @@ node harness.js
 - Non-Admin: append activity ของตนได้ แต่อ่าน/แก้ log ไม่ได้
 - Logout/401/403: session ถูกล้างและต้อง login ใหม่
 - Network loss หลัง login: แก้ local ได้ และ reconnect แล้ว merge โดยไม่เขียนทับ offline delta
+- Chat: ส่งสองข้อความจากสอง session พร้อมกันแล้วต้องเห็นครบทั้งสองข้อความ; ส่ง event เดิมซ้ำต้องไม่สร้างข้อความซ้ำ
+- Chat: เปลี่ยน approval ผ่าน RPC เท่านั้น, ชื่อผู้อนุมัติต้องเป็น membership จริง, และแก้สูตรแล้ว approval เดิมต้องถูกล้าง
+- Chat: อ่านห้องแล้ว read marker ต้องเป็นของ user นั้นเท่านั้น; direct write ของ `fs_chats` จาก browser ต้องถูกปฏิเสธ
 
 Reviewer ต้องตรวจว่า `fs_users.data.pass` ยังมี key แต่เป็น JSON `null`, anon ไม่มี table grants และไม่มี privileged credential ใน diff/log
 
@@ -83,5 +86,17 @@ Reviewer ต้องตรวจว่า `fs_users.data.pass` ยังมี 
 2. Supabase Owner ใช้ `supabase/rollback_auth_rls.sql` เฉพาะเมื่อ Incident/approval อนุญาต
 3. Rollback SQL ไม่ลบ table/data แต่ **เปิด anonymous CRUD แบบ legacy อีกครั้ง** จึงต้องจำกัดเวลา, เฝ้าระวัง และรีบกลับสู่ secure desired state
 4. ตรวจ health/data count จาก sanitized evidence, revoke break-glass access และทำ post-incident review
+
+## 6. Chat event store rollout
+
+`supabase/schema.sql` เพิ่ม `fs_chat_events` และ `fs_chat_reads` แบบ additive และทำ legacy backfill แบบ rerunnable โดยคง `fs_chats` เป็น projection เดิมไว้
+
+1. ทำ backup/restore point ก่อนรัน migration
+2. รัน `supabase/schema.sql` ใน staging และตรวจจำนวน event ต่อห้องเทียบกับข้อความ/approval ใน `fs_chats`
+3. ตรวจว่า browser role `authenticated` มีสิทธิ์อ่าน `fs_chats` แต่ไม่มี direct insert/update/delete และมีสิทธิ์ execute เฉพาะ RPC ที่กำหนด
+4. ทำ concurrent Chat UAT อย่างน้อย 2 session และทดสอบ network loss/retry ของ outbox
+5. เมื่อตรวจผ่านแล้ว Runtime Operator จึง deploy application commit เดียวกับ schema ที่อนุมัติ
+
+Rollback ของ application สามารถย้อนกลับไปอ่าน projection `fs_chats` ได้ แต่การลบ event/read tables ต้องใช้ migration rollback ที่ผ่าน approval แยกต่างหากเท่านั้น
 
 Codex ไม่มีอำนาจเปลี่ยน repository visibility/settings, รัน production SQL, final approve, merge หรือ deploy

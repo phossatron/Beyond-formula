@@ -65,6 +65,7 @@
 | `fs_imp` | ชื่อผู้ที่กำลัง impersonate (string) |
 
 Optional state ที่เพิ่มแบบ backward compatible: `sessionStorage.fs_auth_session` เก็บ Auth session เฉพาะ tab/session และ `localStorage.fs_sync_snapshot` เก็บ server snapshot ที่ไม่มี token เพื่อ merge offline delta
+และ `localStorage.fs_chat_event_outbox`, `fs_chat_read_outbox`, `fs_chat_delete_outbox` เก็บรายการ Chat ที่รอ RPC แบบ local-first; รายการเหล่านี้ต้องล้างได้เฉพาะเมื่อ server ตอบสำเร็จ
 
 ### record (`fs_records[]`)
 ```

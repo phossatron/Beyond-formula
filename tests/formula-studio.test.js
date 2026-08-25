@@ -20,6 +20,9 @@
     currentUser = '';
     impersonator = '';
     userList = [];
+    if(typeof chatEventOutbox !== 'undefined') chatEventOutbox = [];
+    if(typeof chatReadOutbox !== 'undefined') chatReadOutbox = [];
+    if(typeof chatDeleteOutbox !== 'undefined') chatDeleteOutbox = [];
     sbReady = false;
     sbErr = '';
   }
@@ -138,6 +141,50 @@
     assert(records.some(r=>r.id==='A00002'), 'remote addition was not merged');
     assert(records.some(r=>r.id==='A00003'), 'offline addition was lost');
     equal(recCounter, 3, 'record counter moved backward');
+  });
+
+  test('secure Chat event outbox flushes through the RPC and clears only after success', async function(){
+    reset();
+    authSession = {access_token:'member-token'};
+    authMembership = {name:'Sales One',role:'sales',active:true};
+    currentUser = 'Sales One';
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      version:1,type:'message',actor:'Sales One',ts:1,text:'hello',event_id:'evt-1'
+    }));
+    queueChatEvent('A00001', {type:'message',text:'hello'}, 'evt-1');
+    equal(chatEventOutbox.length, 1, 'Chat event was not queued');
+    await sbPushChatEvents();
+    const call = window.__fetchCalls[0];
+    assert(call.url.endsWith('/rest/v1/rpc/fs_append_chat_event'), 'Chat did not use append RPC');
+    const body = JSON.parse(call.options.body);
+    equal(body.p_event_id, 'evt-1', 'event id was not sent');
+    equal(body.p_job_id, 'A00001', 'job id was not sent');
+    equal(body.p_payload.text, 'hello', 'message text was changed');
+    equal(chatEventOutbox.length, 0, 'successful Chat event remained queued');
+  });
+
+  test('secure Chat sync never direct-upserts the legacy fs_chats row', async function(){
+    reset();
+    authSession = {access_token:'member-token'};
+    authMembership = {name:'Sales One',role:'sales',active:true};
+    currentUser = 'Sales One';
+    records=[]; userList=[]; activities=[]; recCounter=0; chats=[{jobId:'A00001',messages:[{type:'msg',user:'Sales One',text:'local',ts:2}],parts:[],approvals:{}}];
+    sbSnap = {records:{},chats:{A00001:JSON.stringify({jobId:'A00001',messages:[]})},users:{},acts:{},counter:0};
+    const pushed = await sbPush();
+    equal(pushed, false, 'legacy Chat row was treated as a direct sync change');
+    assert(!window.__fetchCalls.some(call=>call.url.includes('/fs_chats')), 'secure mode used direct fs_chats REST write');
+  });
+
+  test('formula edits invalidate all existing Chat approvals locally', function(){
+    reset();
+    SB_URL=''; SB_KEY='';
+    currentUser='PD One';
+    userList=[{name:'PD One',role:'pd'}];
+    const record={id:'A00001',rows:[]};
+    records=[record];
+    chats=[{jobId:'A00001',messages:[],parts:[],approvals:{pd:{by:'PD One'},ra:{by:'RA One'},rd:{by:'RD One'},sales:{by:'Sales One'}}}];
+    invalidateChatApprovals(getChat('A00001'));
+    assert(CHAT_PARTS.every(part=>!getChat('A00001').approvals[part.key]), 'formula edit retained an old approval');
   });
 
   test('displayed sync errors redact tokens and credentials', function(){

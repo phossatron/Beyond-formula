@@ -28,9 +28,9 @@ insert into public.fs_records(id,data) values
   ('A00001','{"id":"A00001","customer":"Alpha","createdBy":"Sales One","salesOwner":"Sales One","rows":[],"closed":false}'::jsonb),
   ('A00002','{"id":"A00002","customer":"Beta","createdBy":"Sales Two","salesOwner":"Sales Two","rows":[],"closed":false}'::jsonb)
 on conflict (id) do update set data=excluded.data;
-insert into public.fs_chats(job_id,data) values
-  ('A00001','{"jobId":"A00001","createdBy":"Sales One","messages":[],"parts":[],"seen":{},"approvals":{"pd":null,"ra":null,"rd":null,"sales":null}}'::jsonb)
-on conflict (job_id) do update set data=excluded.data;
+select public.fs_append_chat_event(
+  'seed-chat','A00001','{"type":"system","action":"chat_created","text":"seed"}'::jsonb
+);
 insert into public.fs_activities(uid,ts,data) values
   ('seed-event',0,'{"user":"Admin Owner"}'::jsonb)
 on conflict (uid) do nothing;
@@ -101,6 +101,15 @@ begin; set local role authenticated; select set_config('request.jwt.claim.sub','
 \endif
 rollback;
 
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','55555555-5555-5555-5555-555555555555',true); update public.fs_chats set data=jsonb_set(data,'{approvals,ra}','{"by":"Spoofed Name"}') where job_id='A00001';
+\if :ERROR
+  \echo 'PASS approval actor spoof denied'
+\else
+  \echo 'FAIL approval actor spoof unexpectedly allowed'
+  \quit 1
+\endif
+rollback;
+
 begin; set local role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true); select 1/count(*) from public.fs_activities;
 \if :ERROR
   \echo 'PASS non-Admin activity read denied'
@@ -138,6 +147,71 @@ begin; set local role authenticated; select set_config('request.jwt.claim.sub','
 rollback;
 \set ON_ERROR_STOP on
 
+-- Chat event store: append-only, idempotent, server-stamped actor, and RPC-only writes.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true);
+do $$
+declare
+  first_event jsonb;
+  duplicate_event jsonb;
+  event_count integer;
+  message_count integer;
+begin
+  first_event := public.fs_append_chat_event(
+    'sales-message-1','A00001','{"type":"message","text":"first"}'::jsonb
+  );
+  duplicate_event := public.fs_append_chat_event(
+    'sales-message-1','A00001','{"type":"message","text":"different payload"}'::jsonb
+  );
+  if first_event is distinct from duplicate_event then
+    raise exception 'duplicate event did not return the original canonical event';
+  end if;
+  select count(*) into event_count from public.fs_chat_events where event_id='sales-message-1';
+  if event_count <> 1 then raise exception 'duplicate event created more than one row'; end if;
+  select jsonb_array_length(data->'messages') into message_count from public.fs_chats where job_id='A00001';
+  if message_count <> 2 then raise exception 'projection duplicated or lost the message'; end if;
+  if first_event->>'actor' <> 'Sales One' then raise exception 'event actor was not server stamped'; end if;
+end $$;
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','55555555-5555-5555-5555-555555555555',true);
+do $$
+declare event_data jsonb;
+begin
+  event_data := public.fs_append_chat_event(
+    'ra-approval-1','A00001',
+    '{"type":"approval_set","key":"ra","approval":{"by":"Spoofed Name"}}'::jsonb
+  );
+  if event_data->>'actor' <> 'RA One' then raise exception 'approval actor was not server stamped'; end if;
+  if event_data->'approval'->>'by' <> 'RA One' then raise exception 'approval payload accepted spoofed actor'; end if;
+end $$;
+rollback;
+
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true);
+select public.fs_mark_chat_seen('A00001',123456789);
+do $$ begin
+  if (select seen_ts from public.fs_chat_reads
+      where user_id='22222222-2222-2222-2222-222222222222' and job_id='A00001') <> 123456789
+  then raise exception 'chat read marker was not saved'; end if;
+end $$;
+rollback;
+
+\set ON_ERROR_STOP off
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',true); insert into public.fs_chat_events(event_id,job_id,data) values ('direct-write','A00001','{}'::jsonb);
+\if :ERROR
+  \echo 'PASS direct chat event insert denied'
+\else
+  \echo 'FAIL direct chat event insert unexpectedly allowed'
+  \quit 1
+\endif
+rollback;
+\set ON_ERROR_STOP on
+
 -- Positive paths.
 begin;
 set local role authenticated;
@@ -156,7 +230,7 @@ rollback;
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','55555555-5555-5555-5555-555555555555',true);
-update public.fs_chats set data=jsonb_set(data,'{approvals,ra}','{"by":"RA One"}') where job_id='A00001';
+select public.fs_append_chat_event('positive-ra','A00001','{"type":"approval_set","key":"ra"}'::jsonb);
 rollback;
 
 begin;

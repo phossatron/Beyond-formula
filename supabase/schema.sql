@@ -14,6 +14,25 @@ create table if not exists public.fs_chats (
   data jsonb not null,
   updated_at timestamptz not null default now()
 );
+-- Additive Chat event store. fs_chats remains the backward-compatible projection.
+create table if not exists public.fs_chat_events (
+  event_id text primary key,
+  job_id text not null,
+  seq bigint generated always as identity unique,
+  data jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists fs_chat_events_job_seq_idx
+  on public.fs_chat_events (job_id, seq);
+create table if not exists public.fs_chat_reads (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  job_id text not null,
+  seen_ts bigint not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, job_id)
+);
+create index if not exists fs_chat_reads_job_idx
+  on public.fs_chat_reads (job_id, updated_at desc);
 create table if not exists public.fs_users (
   name text primary key,
   data jsonb not null,
@@ -269,6 +288,22 @@ begin
   if (new_approvals->'sales') is distinct from (old_approvals->'sales') and actor_role<>'sales' then
     raise exception 'only Sales can change Sales approval' using errcode='42501';
   end if;
+  if (new_approvals->'pd' is distinct from old_approvals->'pd'
+      and new_approvals->'pd' is not null
+      and new_approvals->'pd'->>'by' is distinct from actor_name)
+  then raise exception 'PD approval actor mismatch' using errcode='42501'; end if;
+  if (new_approvals->'ra' is distinct from old_approvals->'ra'
+      and new_approvals->'ra' is not null
+      and new_approvals->'ra'->>'by' is distinct from actor_name)
+  then raise exception 'RA approval actor mismatch' using errcode='42501'; end if;
+  if (new_approvals->'rd' is distinct from old_approvals->'rd'
+      and new_approvals->'rd' is not null
+      and new_approvals->'rd'->>'by' is distinct from actor_name)
+  then raise exception 'RD approval actor mismatch' using errcode='42501'; end if;
+  if (new_approvals->'sales' is distinct from old_approvals->'sales'
+      and new_approvals->'sales' is not null
+      and new_approvals->'sales'->>'by' is distinct from actor_name)
+  then raise exception 'Sales approval actor mismatch' using errcode='42501'; end if;
   if (new.data->'exports') is distinct from (old.data->'exports') and actor_role<>'opc' then
     raise exception 'only OPC can change export state' using errcode='42501';
   end if;
@@ -304,10 +339,260 @@ end $$;
 
 revoke all on table public.fs_records,public.fs_chats,public.fs_users,
   public.fs_activities,public.fs_meta,public.fs_memberships from public,anon,authenticated;
-grant select,insert,update,delete on public.fs_records,public.fs_chats to authenticated;
+grant select on public.fs_chats to authenticated;
+grant select,insert,update,delete on public.fs_records to authenticated;
 grant select,insert,update,delete on public.fs_users,public.fs_memberships to authenticated;
 grant select,insert on public.fs_activities to authenticated;
 grant select,insert,update,delete on public.fs_meta to authenticated;
+
+alter table public.fs_chat_events enable row level security;
+alter table public.fs_chat_events force row level security;
+alter table public.fs_chat_reads enable row level security;
+alter table public.fs_chat_reads force row level security;
+revoke all on table public.fs_chat_events,public.fs_chat_reads from public,anon,authenticated;
+grant select on public.fs_chat_events,public.fs_chat_reads to authenticated;
+
+drop policy if exists chat_events_member_select on public.fs_chat_events;
+create policy chat_events_member_select on public.fs_chat_events for select to authenticated
+using (private.fs_is_active_member());
+drop policy if exists chat_reads_self_select on public.fs_chat_reads;
+create policy chat_reads_self_select on public.fs_chat_reads for select to authenticated
+using (private.fs_is_active_member() and user_id=auth.uid());
+
+create or replace function public.fs_append_chat_event(
+  p_event_id text,
+  p_job_id text,
+  p_payload jsonb
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  actor_role text := private.fs_current_role();
+  actor_name text := private.fs_current_name();
+  event_type text := coalesce(p_payload->>'type','');
+  action_name text := coalesce(p_payload->>'action','');
+  approval_key text := coalesce(p_payload->>'key','');
+  text_value text := btrim(coalesce(p_payload->>'text',''));
+  approval_value jsonb := 'null'::jsonb;
+  event_data jsonb;
+  existing_data jsonb;
+  existing_job_id text;
+  chat_data jsonb;
+  parts_data jsonb;
+  message_data jsonb;
+  now_ms bigint := floor(extract(epoch from clock_timestamp()) * 1000);
+begin
+  if actor_name is null or actor_role is null then
+    raise exception 'active membership required' using errcode='42501';
+  end if;
+  if p_event_id is null or p_event_id !~ '^[A-Za-z0-9:_-]{1,160}$' then
+    raise exception 'invalid chat event id' using errcode='42501';
+  end if;
+  if p_job_id is null or p_job_id !~ '^[A-Z]+[0-9]{5}$' then
+    raise exception 'invalid chat job id' using errcode='42501';
+  end if;
+  if p_payload is null or jsonb_typeof(p_payload) <> 'object' then
+    raise exception 'chat event payload must be an object' using errcode='42501';
+  end if;
+
+  select e.job_id,e.data into existing_job_id,existing_data
+  from public.fs_chat_events e where e.event_id=p_event_id;
+  if found then
+    if existing_job_id is distinct from p_job_id then
+      raise exception 'chat event id already belongs to another job' using errcode='42501';
+    end if;
+    return existing_data;
+  end if;
+
+  if event_type='message' then
+    if text_value='' or length(text_value)>10000 then
+      raise exception 'chat message must be 1 to 10000 characters' using errcode='22023';
+    end if;
+    event_data := jsonb_build_object(
+      'version',1,'type','message','actor',actor_name,'ts',now_ms,
+      'text',text_value,'event_id',p_event_id
+    );
+  elsif event_type in ('approval_set','approval_revoke') then
+    if approval_key not in ('pd','ra','rd','sales') or
+       (actor_role <> approval_key and actor_role <> 'admin') then
+      raise exception 'approval role mismatch' using errcode='42501';
+    end if;
+    if event_type='approval_set' then
+      approval_value := jsonb_build_object(
+        'by',actor_name,
+        'at',to_char(clock_timestamp(),'YYYY-MM-DD HH24:MI:SS'),
+        'ts',now_ms
+      );
+    end if;
+    event_data := jsonb_build_object(
+      'version',1,'type',event_type,'actor',actor_name,'ts',now_ms,
+      'key',approval_key,'approval',approval_value,'event_id',p_event_id
+    );
+  elsif event_type='system' then
+    if text_value='' or length(text_value)>5000 then
+      raise exception 'system Chat event text is invalid' using errcode='22023';
+    end if;
+    if action_name in ('formula_change','job_edit') and actor_role not in ('admin','pd') then
+      raise exception 'formula system event role mismatch' using errcode='42501';
+    end if;
+    if action_name in ('close_job','reopen_job') and actor_role not in ('admin','sales','opc') then
+      raise exception 'job system event role mismatch' using errcode='42501';
+    end if;
+    if action_name='export' and actor_role not in ('admin','opc') then
+      raise exception 'export system event role mismatch' using errcode='42501';
+    end if;
+    if action_name not in ('chat_created','formula_change','job_edit','close_job','reopen_job','export') then
+      raise exception 'unknown system Chat event' using errcode='42501';
+    end if;
+    event_data := jsonb_build_object(
+      'version',1,'type','system','actor',actor_name,'ts',now_ms,
+      'action',action_name,'text',text_value,'event_id',p_event_id
+    );
+  else
+    raise exception 'unknown Chat event type' using errcode='22023';
+  end if;
+
+  insert into public.fs_chat_events(event_id,job_id,data)
+  values (p_event_id,p_job_id,event_data);
+
+  if not exists (select 1 from public.fs_chats c where c.job_id=p_job_id) then
+    insert into public.fs_chats(job_id,data) values (
+      p_job_id,
+      jsonb_build_object(
+        'jobId',p_job_id,'createdAt',now_ms,'createdBy',actor_name,
+        'messages','[]'::jsonb,'parts','[]'::jsonb,'seen','{}'::jsonb,
+        'approvals',jsonb_build_object('pd',null,'ra',null,'rd',null,'sales',null)
+      )
+    );
+  end if;
+
+  select c.data into chat_data from public.fs_chats c
+  where c.job_id=p_job_id for update;
+  select coalesce(jsonb_agg(
+    case when e.value->>'name'=actor_name then
+      e.value || jsonb_build_object(
+        'lastAt',now_ms,
+        'msgs',coalesce((e.value->>'msgs')::integer,0) + case when event_type='message' then 1 else 0 end
+      )
+    else e.value end order by e.ord
+  ),'[]'::jsonb) into parts_data
+  from jsonb_array_elements(coalesce(chat_data->'parts','[]'::jsonb)) with ordinality e(value,ord);
+  if not exists (
+    select 1 from jsonb_array_elements(coalesce(chat_data->'parts','[]'::jsonb)) e(value)
+    where e.value->>'name'=actor_name
+  ) then
+    parts_data := parts_data || jsonb_build_array(jsonb_build_object(
+      'name',actor_name,'firstAt',now_ms,'lastAt',now_ms,'msgs',case when event_type='message' then 1 else 0 end,'activeMs',0
+    ));
+  end if;
+  chat_data := jsonb_set(chat_data,'{parts}',parts_data,true);
+  if event_type='message' then
+    message_data := jsonb_build_object('type','msg','user',actor_name,'text',text_value,'ts',now_ms,'eventId',p_event_id);
+    chat_data := jsonb_set(chat_data,'{messages}',coalesce(chat_data->'messages','[]'::jsonb) || jsonb_build_array(message_data),true);
+  elsif event_type='system' then
+    message_data := jsonb_build_object('type','sys','user',actor_name,'text',text_value,'ts',now_ms,'eventId',p_event_id);
+    chat_data := jsonb_set(chat_data,'{messages}',coalesce(chat_data->'messages','[]'::jsonb) || jsonb_build_array(message_data),true);
+    if action_name in ('formula_change','job_edit') then
+      chat_data := jsonb_set(chat_data,'{approvals}',jsonb_build_object('pd',null,'ra',null,'rd',null,'sales',null),true);
+    elsif action_name='export' then
+      chat_data := jsonb_set(chat_data,'{exports}',to_jsonb(coalesce((chat_data->>'exports')::integer,0)+1),true);
+      chat_data := jsonb_set(chat_data,'{lastExportBy}',to_jsonb(actor_name),true);
+      chat_data := jsonb_set(chat_data,'{lastExportAt}',to_jsonb(to_char(clock_timestamp(),'YYYY-MM-DD HH24:MI:SS')),true);
+    end if;
+  else
+    message_data := jsonb_build_object(
+      'type','sys','user',actor_name,
+      'text',case when event_type='approval_set' then actor_name || ' อนุมัติ ' || upper(approval_key) || ' ✓'
+                  else actor_name || ' ยกเลิกการอนุมัติ ' || upper(approval_key) end,
+      'ts',now_ms,'eventId',p_event_id
+    );
+    chat_data := jsonb_set(chat_data,'{messages}',coalesce(chat_data->'messages','[]'::jsonb) || jsonb_build_array(message_data),true);
+    chat_data := jsonb_set(chat_data,array['approvals',approval_key],approval_value,true);
+  end if;
+  update public.fs_chats set data=chat_data,updated_at=now() where job_id=p_job_id;
+  return event_data;
+end $$;
+
+create or replace function public.fs_mark_chat_seen(p_job_id text, p_seen_ts bigint)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not private.fs_is_active_member() then
+    raise exception 'active membership required' using errcode='42501';
+  end if;
+  if p_job_id is null or p_job_id !~ '^[A-Z]+[0-9]{5}$' then
+    raise exception 'invalid chat job id' using errcode='42501';
+  end if;
+  insert into public.fs_chat_reads(user_id,job_id,seen_ts)
+  values (auth.uid(),p_job_id,greatest(coalesce(p_seen_ts,0),0))
+  on conflict (user_id,job_id) do update
+    set seen_ts=greatest(public.fs_chat_reads.seen_ts,excluded.seen_ts),updated_at=now();
+  update public.fs_chats
+  set data=jsonb_set(
+    coalesce(data,'{}'::jsonb),
+    array['seen',private.fs_current_name()],
+    to_jsonb(greatest(coalesce(p_seen_ts,0),0)),
+    true
+  ), updated_at=now()
+  where job_id=p_job_id;
+  return true;
+end $$;
+
+create or replace function public.fs_delete_chat(p_job_id text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if private.fs_current_role() <> 'admin' then
+    raise exception 'only Admin can delete Chat' using errcode='42501';
+  end if;
+  delete from public.fs_chat_reads where job_id=p_job_id;
+  delete from public.fs_chat_events where job_id=p_job_id;
+  delete from public.fs_chats where job_id=p_job_id;
+  return true;
+end $$;
+
+revoke all on function public.fs_append_chat_event(text,text,jsonb) from public,anon,authenticated;
+revoke all on function public.fs_mark_chat_seen(text,bigint) from public,anon,authenticated;
+revoke all on function public.fs_delete_chat(text) from public,anon,authenticated;
+grant execute on function public.fs_append_chat_event(text,text,jsonb) to authenticated;
+grant execute on function public.fs_mark_chat_seen(text,bigint) to authenticated;
+grant execute on function public.fs_delete_chat(text) to authenticated;
+
+-- Rerunnable legacy backfill. It records old messages/approvals without changing fs_chats.
+insert into public.fs_chat_events(event_id,job_id,data)
+select c.job_id || ':legacy:message:' || e.ord::text,
+       c.job_id,
+       jsonb_build_object(
+         'version',1,
+         'type',case when e.value->>'type'='msg' then 'message' else 'system' end,
+         'actor',coalesce(e.value->>'user',''),
+         'ts',coalesce((e.value->>'ts')::bigint,0),
+         'text',coalesce(e.value->>'text',''),
+         'legacy',true
+       )
+from public.fs_chats c
+cross join lateral jsonb_array_elements(coalesce(c.data->'messages','[]'::jsonb)) with ordinality e(value,ord)
+on conflict (event_id) do nothing;
+insert into public.fs_chat_events(event_id,job_id,data)
+select c.job_id || ':legacy:approval:' || k.key,
+       c.job_id,
+       jsonb_build_object(
+         'version',1,'type','approval_set','actor',coalesce(c.data->'approvals'->k.key->>'by',''),
+         'ts',coalesce((c.data->'approvals'->k.key->>'ts')::bigint,0),
+         'key',k.key,'approval',c.data->'approvals'->k.key,'legacy',true
+       )
+from public.fs_chats c
+cross join lateral unnest(array['pd','ra','rd','sales']) k(key)
+where c.data->'approvals'->k.key is not null
+on conflict (event_id) do nothing;
 
 drop policy if exists memberships_self_or_admin_select on public.fs_memberships;
 create policy memberships_self_or_admin_select on public.fs_memberships for select to authenticated
