@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-04.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-05.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -1138,6 +1138,20 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
 let SB_URL = 'https://uumkwaliebucxebkkllm.supabase.co';   // เช่น https://abcdefgh.supabase.co
 let SB_KEY = 'sb_publishable_yAmnKBRObKbjRxyqrzA7BA_4DQKDEU5';   // anon / publishable key
 const SB_POLL_MS = 5000;   // ดึงข้อมูลใหม่จากเซิร์ฟเวอร์ทุกกี่มิลลิวินาที
+
+// ===================================================================
+//  Private workspace (ของเสริม) — เว้นว่างไว้ = ปิดสนิท
+//
+//  แอปนี้ไม่รู้ว่า workspace ที่จะโหลดมาคืออะไร ชื่ออะไร หรือมีหน้าตาแบบไหน
+//  มันแค่ถามเซิร์ฟเวอร์ที่ตั้งค่าไว้ว่า "ผู้ใช้คนนี้มี workspace ส่วนตัวไหม"
+//  แล้วรับชื่อแท็บกับที่อยู่ของ bundle มาจากคำตอบ · ทุกอย่างสร้างตอน runtime
+//
+//  จงใจไม่ฝังชื่อหรือเนื้อหาของ workspace ไว้ในไฟล์นี้ คนที่เปิด view-source
+//  โดยไม่มีสิทธิ์จึงไม่เห็นแม้แต่ร่องรอยว่ามีอะไรอยู่
+//
+//  ค่าเริ่มต้นเป็นค่าว่างเสมอ ไม่ใช่ URL ของ production — ไม่ตั้งค่า = ไม่ยิงอะไรเลย
+// ===================================================================
+let SCIENCE_WORKSPACE_API_ORIGIN = '';
 
 // ========== THAI FDA DATABASE ==========
 // อ้างอิง: ประกาศกระทรวงสาธารณสุข ฉบับที่ 448 พ.ศ. 2566 (มีผล 4 ม.ค. 2567)
@@ -2204,6 +2218,22 @@ function fmtUW(d){ return d.uw ? [d.uw, d.uwUnit || 'mg'].filter(Boolean).join('
 // ========== NAVIGATION ==========
 function switchView(v) {
   const viewIds = {input:'inputView', dash:'dashView', modify:'modifyView', chat:'chatView', act:'actView'};
+  // panel ที่ loader สร้างตอน runtime ไม่ได้อยู่ในตารางข้างบน · ถ้าไม่ดักไว้ตรงนี้
+  // การกดปุ่มของมันจะตกไปที่ค่าเริ่มต้น inputView แล้วเปิดหน้าผิด
+  if(v === 'pws'){
+    const panel = document.getElementById('pwsPanel');
+    if(!panel){ v = 'dash'; }
+    else {
+      document.querySelectorAll('.view').forEach(el=>el.classList.remove('on'));
+      panel.classList.add('on');
+      ['sideData','sideDash','sideChat','sideActivities'].forEach(id=>{
+        const el = document.getElementById(id); if(el) el.classList.remove('on');
+      });
+      const btn = document.getElementById('pwsNav');
+      if(btn) btn.classList.add('on');
+      return;
+    }
+  }
   if(v==='act' && !can('manageUsers')){ alert('Activities log เปิดดูได้เฉพาะ Role: Admin'); return; }
   if(v==='input' && currentUser && !can('createData')){
     alert('เมนู Customer Data ใช้ได้เฉพาะ Role: Admin, Sales, OPC, MKT\nRole ของคุณ: ' + (roleLabel(currentRole())||'ไม่ระบุ'));
@@ -2220,6 +2250,9 @@ function switchView(v) {
   if(v==='dash') renderRecordsList();
   if(v==='chat') renderChat();
   if(v==='act') renderActivities();
+  // ปุ่มของ workspace ต้องเลิกไฮไลต์เมื่อผู้ใช้ไปหน้าอื่น
+  const pwsBtn = document.getElementById('pwsNav');
+  if(pwsBtn) pwsBtn.classList.remove('on');
   if(v==='chat'){ const g=document.getElementById('chatGroup'); if(g) g.classList.add('open'); }
   if(v!=='input') { document.querySelectorAll('.side-link:not(.chat-job)').forEach(el=>el.classList.remove('on')); window.scrollTo({top:0,behavior:'auto'}); }
 }
@@ -6058,6 +6091,9 @@ function authStoreSession(session){
 function authClearSession(){
   clearTimeout(authRefreshTimer);
   authRefreshTimer = null;
+  // ถอนพื้นที่ทำงานส่วนตัวก่อนล้าง session ไม่งั้นปุ่มกับ panel จะค้างอยู่บนหน้าจอ
+  // ของคนที่ออกจากระบบไปแล้ว และ Blob URL จะยังอ้างถึงโค้ดของมันได้อยู่
+  try{ teardownPrivateWorkspace(); }catch(err){}
   authSession = null;
   authMembership = null;
   currentUser = '';
@@ -6556,6 +6592,153 @@ async function sbCycle(){
 function sbManualSync(){ if(sbOn() && authSession){ sbErr=''; sbCycle(); } }
 
 // ---------- เริ่มทำงานตอนเปิดแอป ----------
+// ===================================================================
+//  Generic private-workspace loader
+//
+//  ทั้งบล็อกนี้ไม่รู้จักชื่อของ workspace ที่มันโหลด · ชื่อแท็บ ที่อยู่ของ bundle และ
+//  โหมด มาจากคำตอบของเซิร์ฟเวอร์ทั้งหมด และเซิร์ฟเวอร์เป็นคนตัดสินว่าใครได้เห็น
+//
+//  ผู้ที่ไม่มีสิทธิ์ต้องไม่เกิดอะไรขึ้นเลย: ไม่มีปุ่ม ไม่มี panel ไม่มี key ใน
+//  localStorage และไม่มีแม้แต่คำขอ bundle · คำตอบ 404 เปล่า ๆ แยกไม่ออกจาก
+//  "ไม่มีอะไรอยู่ตรงนั้น"
+// ===================================================================
+
+let pwsState = null;   // {navEl, panelEl, blobUrl, version}
+
+/** origin ที่อนุมัติต้องเป็น HTTPS origin เปล่า ๆ เท่านั้น ไม่มี path ไม่มี wildcard */
+function pwsApprovedOrigin(){
+  const value = SCIENCE_WORKSPACE_API_ORIGIN;
+  if(typeof value !== 'string' || value === '') return '';
+  let url;
+  try{ url = new URL(value); }catch(err){ return ''; }
+  if(url.protocol !== 'https:') return '';
+  if(url.username || url.password) return '';
+  if(url.pathname !== '/' || url.search || url.hash) return '';
+  // ตัวแยกวิเคราะห์ยอมรับ * ในชื่อโฮสต์ ถ้าปล่อยไว้ คนตั้งค่าที่เขียน *.example.com
+  // จะได้ค่าที่ไม่แมตช์อะไรเลยแบบเงียบ ๆ
+  if(!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(url.hostname)) return '';
+  if(value.replace(/\/+$/,'') !== url.origin) return '';
+  return url.origin;
+}
+
+/** ถอนทุกอย่างที่ loader สร้างไว้ · เรียกซ้ำได้ปลอดภัย */
+function teardownPrivateWorkspace(){
+  if(!pwsState) return;
+  try{ if(pwsState.navEl && pwsState.navEl.parentNode) pwsState.navEl.parentNode.removeChild(pwsState.navEl); }catch(err){}
+  try{ if(pwsState.panelEl && pwsState.panelEl.parentNode) pwsState.panelEl.parentNode.removeChild(pwsState.panelEl); }catch(err){}
+  // ปล่อย Blob URL คืน ไม่งั้นโค้ดของ workspace ยังถูกอ้างถึงได้หลังผู้ใช้ออกจากระบบ
+  try{ if(pwsState.blobUrl) URL.revokeObjectURL(pwsState.blobUrl); }catch(err){}
+  pwsState = null;
+}
+
+/**
+ * ถาม manifest แล้ว mount ถ้าได้รับอนุญาต
+ *
+ * เรียกได้บ่อยเท่าที่ต้องการ · ถ้าสิทธิ์หายไประหว่างทาง มันจะถอนของเดิมออกให้เอง
+ */
+async function mountPrivateWorkspace(){
+  const origin = pwsApprovedOrigin();
+  // ไม่ตั้งค่า / origin ไม่ปลอดภัย / ยังไม่ล็อกอิน / local-only mode = เงียบสนิท
+  if(!origin || !sbOn() || !authSession || !authSession.access_token){
+    teardownPrivateWorkspace();
+    return;
+  }
+
+  let manifest = null;
+  try{
+    const res = await fetch(origin + '/api/private-workspaces/formula', {
+      method:'GET',
+      headers:{Authorization:'Bearer ' + authSession.access_token},
+      credentials:'omit',   // ตัวตนคือ bearer token เท่านั้น ไม่เคยพึ่ง cookie
+      cache:'no-store'      // คำตอบเป็นของเฉพาะคน ห้ามให้ cache ไหนเก็บไว้
+    });
+    if(!res.ok){ teardownPrivateWorkspace(); return; }
+    manifest = await res.json();
+  }catch(err){
+    // ต่อไม่ติดก็คือไม่มี · ไม่ประกาศให้ผู้ใช้รู้ว่ามีอะไรที่เขาเข้าไม่ถึง
+    teardownPrivateWorkspace();
+    return;
+  }
+
+  if(!manifest || manifest.allowed !== true || typeof manifest.label !== 'string' || !manifest.label){
+    teardownPrivateWorkspace();
+    return;
+  }
+
+  // bundle ต้องอยู่บน origin ที่อนุมัติไว้เท่านั้น · path สัมพัทธ์แปลงจาก origin นั้น
+  let bundleUrl;
+  try{ bundleUrl = new URL(String(manifest.bundleUrl || ''), origin + '/'); }
+  catch(err){ teardownPrivateWorkspace(); return; }
+  if(bundleUrl.origin !== origin || bundleUrl.protocol !== 'https:'){
+    teardownPrivateWorkspace();
+    return;
+  }
+
+  // ของเดิมที่ mount ไว้แล้วรุ่นเดียวกัน ไม่ต้องทำซ้ำ
+  if(pwsState && pwsState.version === manifest.version) return;
+  teardownPrivateWorkspace();
+
+  let source;
+  try{
+    const res = await fetch(bundleUrl.toString(), {
+      method:'GET',
+      headers:{Authorization:'Bearer ' + authSession.access_token},
+      credentials:'omit', cache:'no-store'
+    });
+    if(!res.ok){ return; }
+    source = await res.text();
+  }catch(err){ return; }
+
+  const nav = pwsCreateNav(manifest.label);
+  const panel = pwsCreatePanel();
+  if(!nav || !panel) return;
+
+  let blobUrl = '';
+  try{
+    blobUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+  }catch(err){ blobUrl = ''; }
+
+  pwsState = {navEl:nav, panelEl:panel, blobUrl:blobUrl, version:manifest.version};
+
+  if(blobUrl){
+    try{
+      const mod = await import(blobUrl);
+      // ชื่อ export ต้องเป็นชื่อกลาง ๆ · ไฟล์นี้ต้องไม่รู้ว่า workspace ที่โหลดมาคืออะไร
+      const mount = (mod && (mod.mount || mod.default)) || window.__pwsMounted;
+      if(typeof mount === 'function') mount(panel, {mode:manifest.mode});
+    }catch(err){
+      // bundle รันไม่ได้ ก็ยังคงแท็บไว้พร้อมข้อความ ดีกว่าหายไปเฉย ๆ โดยไม่บอกอะไร
+      panel.textContent = 'เปิดพื้นที่ทำงานส่วนตัวไม่สำเร็จ กรุณาลองใหม่';
+    }
+  }
+}
+
+/** ปุ่มใหม่ต่อท้ายเมนูเดิม ไม่ขยับของเดิมสักปุ่ม */
+function pwsCreateNav(label){
+  const host = document.getElementById('chatGroup');
+  if(!host || !host.parentNode) return null;
+  const btn = document.createElement('div');
+  btn.id = 'pwsNav';
+  btn.className = 'side-item';
+  // ป้ายมาจากเซิร์ฟเวอร์ · ใส่เป็นข้อความล้วนเสมอ ไม่ใช่ HTML
+  btn.textContent = label;
+  btn.onclick = function(){ switchView('pws'); };
+  host.parentNode.insertBefore(btn, host.nextSibling);
+  return btn;
+}
+
+/** panel ใหม่ต่อท้ายใน .main ไม่แตะ panel เดิม */
+function pwsCreatePanel(){
+  const main = document.querySelector('.main');
+  if(!main) return null;
+  const panel = document.createElement('section');
+  panel.id = 'pwsPanel';
+  // ใช้ class 'view' เหมือน panel เดิมทุกอัน switchView จึงปิดมันให้เองอยู่แล้ว
+  panel.className = 'view';
+  main.appendChild(panel);
+  return panel;
+}
+
 async function sbBoot(sessionAlreadyChecked){
   if(!sbOn()) return;
   if(authChecking) return;
@@ -6585,6 +6768,12 @@ async function sbBoot(sessionAlreadyChecked){
     sbPollingStarted = true;
     setInterval(()=>{ if(!document.hidden) sbCycle(); }, SB_POLL_MS);
     document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) sbCycle(); });
+  }
+  // เรียกหลัง membership พร้อมแล้วเท่านั้น · ก่อนหน้านี้ยังไม่รู้ว่าผู้ใช้เป็นใคร
+  // จึงยังตัดสินไม่ได้ว่าเขามีพื้นที่ทำงานส่วนตัวหรือไม่ · ล้มก็ไม่กระทบการซิงก์
+  if(authSession && authMembership){
+    try{ await mountPrivateWorkspace(); }
+    catch(err){ console.warn('[workspace]', safeError(err)); }
   }
 }
 

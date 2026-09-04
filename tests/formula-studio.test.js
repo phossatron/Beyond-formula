@@ -229,6 +229,230 @@
     equal(window.__fetchCalls.length, 0, 'local-only mode used the network');
   });
 
+  // ---- Private workspace loader (ของเสริมล้วน ไม่แตะของเดิม) ----
+  //
+  // ข้อบังคับจากเจ้าของ: "ทำเสริมปุ่มหน้าใหม่ไม่แตะของเดิมนะ เข้าผ่าน user และ role
+  // ที่กำหนดเท่านั้น" · เทสต์ชุดนี้พิสูจน์ทั้งสองครึ่ง — ครึ่งที่เพิ่มเข้ามา และครึ่งที่
+  // ต้องไม่เปลี่ยนเลยเมื่อไม่มีสิทธิ์หรือไม่ได้ตั้งค่า
+
+  function domFingerprint(){
+    // ลายนิ้วมือของหน้าจอเดิม: ปุ่มเมนู หัวข้อ และจำนวนโหนดใน .main
+    const nav = [...document.querySelectorAll('.side-item, .side-group')].map(el=>el.id || el.textContent.trim()).join('|');
+    const main = document.querySelector('.main');
+    return nav + '##' + (main ? main.children.length : -1);
+  }
+
+  function workspaceSession(){
+    authSession = {access_token:'ws-token', refresh_token:'r', expires_at:Date.now()/1000+3600,
+      user:{id:'55555555-5555-5555-5555-555555555555', email:'rd@example.test'}};
+    authMembership = {name:'อาร์แอนด์ดี', role:'rd', active:true};
+    currentUser = 'อาร์แอนด์ดี';
+  }
+
+  test('index.html ไม่มีคำว่า RD Science หรือเนื้อหา Science แบบ static เลย', function(){
+    reset();
+    // คนที่เปิด view-source โดยไม่มีสิทธิ์ ต้องไม่เห็นแม้แต่ร่องรอยว่ามีระบบนี้อยู่
+    const source = document.documentElement.outerHTML;
+    assert(!/RD Science/i.test(source), 'index.html มีป้าย RD Science ฝังอยู่');
+    assert(!/science[_-]?case|scienceWorkspace|escalation/i.test(source.replace(/SCIENCE_WORKSPACE_API_ORIGIN/g,'')),
+      'index.html มีคำเฉพาะของงาน Science ฝังอยู่');
+  });
+
+  test('ไม่ได้ตั้งค่า origin = ไม่ส่ง request และไม่แตะ DOM เลย', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = '';
+    const before = domFingerprint();
+
+    await mountPrivateWorkspace();
+
+    equal(window.__fetchCalls.length, 0, 'ยิง request ทั้งที่ยังไม่ได้ตั้งค่า');
+    equal(domFingerprint(), before, 'DOM ของเดิมเปลี่ยนไป');
+    equal(document.getElementById('pwsNav'), null, 'สร้างปุ่มทั้งที่ปิดอยู่');
+    equal(document.getElementById('pwsPanel'), null, 'สร้าง panel ทั้งที่ปิดอยู่');
+  });
+
+  test('local-only mode ไม่ส่ง manifest request', async function(){
+    reset();
+    SB_URL = ''; SB_KEY = '';
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    authSession = null;
+    await mountPrivateWorkspace();
+    equal(window.__fetchCalls.length, 0, 'local-only mode ยังยิง request');
+  });
+
+  test('origin ที่ไม่ใช่ HTTPS หรือไม่ใช่ origin เปล่า ๆ ถูกปฏิเสธก่อนยิง request', async function(){
+    for(const bad of ['http://opc.example.test','https://opc.example.test/path','https://*.example.test',
+                      'https://user:pw@opc.example.test','opc.example.test','javascript:alert(1)']){
+      reset();
+      workspaceSession();
+      SCIENCE_WORKSPACE_API_ORIGIN = bad;
+      await mountPrivateWorkspace();
+      equal(window.__fetchCalls.length, 0, 'ยอมรับ origin ที่ไม่ปลอดภัย: ' + bad);
+      equal(document.getElementById('pwsNav'), null, 'สร้างปุ่มจาก origin ที่ไม่ปลอดภัย: ' + bad);
+    }
+  });
+
+  test('ผู้ไม่มีสิทธิ์ไม่เห็นปุ่ม ไม่เห็น panel และไม่มีอะไรเหลือในเครื่อง', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    const before = domFingerprint();
+    // เซิร์ฟเวอร์ตอบ 404 เปล่า ๆ เหมือนไม่มีอะไรอยู่ตรงนั้นเลย
+    window.__fetchQueue.push(window.__mockResponse(404, {error:'NOT_FOUND'}));
+
+    await mountPrivateWorkspace();
+
+    equal(document.getElementById('pwsNav'), null, 'ผู้ไม่มีสิทธิ์ได้ปุ่ม');
+    equal(document.getElementById('pwsPanel'), null, 'ผู้ไม่มีสิทธิ์ได้ panel');
+    equal(domFingerprint(), before, 'DOM ของเดิมเปลี่ยนไปสำหรับผู้ไม่มีสิทธิ์');
+    equal(window.__fetchCalls.length, 1, 'ควรถาม manifest ครั้งเดียวแล้วหยุด');
+    // ห้ามดึง bundle ต่อ
+    assert(!window.__fetchCalls.some(c=>c.url.includes('/bundle')), 'ผู้ไม่มีสิทธิ์ยังไปดึง bundle');
+    // ห้ามทิ้งร่องรอยใน localStorage
+    assert(!Object.keys(localStorage).some(k=>/pws|science|workspace/i.test(k)), 'มี key ค้างใน localStorage');
+  });
+
+  test('manifest request ใช้ bearer token ของผู้ใช้ ไม่ส่ง cookie และไม่ cache', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    window.__fetchQueue.push(window.__mockResponse(404, {error:'NOT_FOUND'}));
+
+    await mountPrivateWorkspace();
+
+    const call = window.__fetchCalls[0];
+    assert(call.url.startsWith('https://opc.example.test/'), 'ยิงผิด origin: ' + call.url);
+    equal(call.options.headers.Authorization, 'Bearer ws-token', 'ไม่ได้ใช้ token ของผู้ใช้');
+    equal(call.options.credentials, 'omit', 'ยังแนบ credential ไปด้วย');
+    equal(call.options.cache, 'no-store', 'ยอมให้ cache คำตอบส่วนตัว');
+  });
+
+  test('ผู้มีสิทธิ์ได้ปุ่มกับ panel ใหม่ โดยของเดิมยังอยู่ครบเท่าเดิม', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    const navBefore = [...document.querySelectorAll('.side-item')].map(el=>el.textContent.trim());
+
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
+      version:'1', mode:'workspace'
+    }));
+    window.__fetchQueue.push(window.__mockResponse(200,
+      'window.__pwsMounted = (host)=>{ host.textContent = "workspace ready"; };'));
+
+    await mountPrivateWorkspace();
+
+    const nav = document.getElementById('pwsNav');
+    assert(nav, 'ผู้มีสิทธิ์ไม่ได้ปุ่ม');
+    equal(nav.textContent, 'RD Science', 'ป้ายปุ่มไม่ได้มาจาก manifest');
+    assert(document.getElementById('pwsPanel'), 'ไม่มี panel');
+
+    // ปุ่มเดิมทุกปุ่มยังอยู่ครบและข้อความไม่เปลี่ยน
+    const navAfter = [...document.querySelectorAll('.side-item')].map(el=>el.textContent.trim());
+    navBefore.forEach(function(label){
+      assert(navAfter.includes(label), 'ปุ่มเดิมหายไป: ' + label);
+    });
+  });
+
+  test('ป้ายจากเซิร์ฟเวอร์ถูกใส่ด้วย textContent ไม่ใช่ HTML', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      allowed:true, label:'<img src=x onerror="window.__pwsXss=1">', 
+      bundleUrl:'/api/private-workspaces/formula/bundle', version:'1', mode:'workspace'
+    }));
+    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+
+    await mountPrivateWorkspace();
+
+    const nav = document.getElementById('pwsNav');
+    assert(nav, 'ไม่ได้สร้างปุ่ม');
+    equal(nav.querySelector('img'), null, 'ป้ายจากเซิร์ฟเวอร์ถูก render เป็น HTML');
+    equal(window.__pwsXss, undefined, 'สคริปต์จากป้ายทำงานได้');
+  });
+
+  test('bundleUrl ที่ชี้ออกนอก origin ที่อนุมัติถูกปฏิเสธ', async function(){
+    for(const bad of ['https://evil.test/bundle.js','http://opc.example.test/bundle.js',
+                      'javascript:alert(1)','//evil.test/x.js']){
+      reset();
+      workspaceSession();
+      SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+      window.__fetchQueue.push(window.__mockResponse(200, {
+        allowed:true, label:'RD Science', bundleUrl:bad, version:'1', mode:'workspace'
+      }));
+      await mountPrivateWorkspace();
+      equal(document.getElementById('pwsNav'), null, 'ยอมรับ bundleUrl อันตราย: ' + bad);
+      assert(!window.__fetchCalls.some(c=>c.url.includes('evil.test')), 'ยิงไปที่ ' + bad);
+    }
+  });
+
+  test('ออกจากระบบแล้วต้องถอนปุ่ม panel และ Blob URL ให้หมด', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    const before = domFingerprint();
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
+      version:'1', mode:'workspace'
+    }));
+    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    await mountPrivateWorkspace();
+    assert(document.getElementById('pwsNav'), 'setup: ไม่ได้ mount');
+
+    authClearSession();
+
+    equal(document.getElementById('pwsNav'), null, 'ปุ่มยังอยู่หลังออกจากระบบ');
+    equal(document.getElementById('pwsPanel'), null, 'panel ยังอยู่หลังออกจากระบบ');
+    equal(domFingerprint(), before, 'DOM ไม่กลับไปเหมือนเดิมหลังออกจากระบบ');
+  });
+
+  test('membership หายหรือ role เปลี่ยน = ถอนออกทันที', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
+      version:'1', mode:'workspace'
+    }));
+    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    await mountPrivateWorkspace();
+    assert(document.getElementById('pwsNav'), 'setup: ไม่ได้ mount');
+
+    // เซิร์ฟเวอร์เปลี่ยนใจ: รอบถัดไปตอบ 404
+    window.__fetchQueue.push(window.__mockResponse(404, {error:'NOT_FOUND'}));
+    await mountPrivateWorkspace();
+
+    equal(document.getElementById('pwsNav'), null, 'สิทธิ์หายแล้วปุ่มยังอยู่');
+    equal(document.getElementById('pwsPanel'), null, 'สิทธิ์หายแล้ว panel ยังอยู่');
+  });
+
+  test('switchView ของเดิมยังทำงานเหมือนเดิมเมื่อมี panel ใหม่อยู่', async function(){
+    reset();
+    workspaceSession();
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://opc.example.test';
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
+      version:'1', mode:'workspace'
+    }));
+    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    await mountPrivateWorkspace();
+
+    // repo นี้ใช้ class 'on' เป็นตัวบอกว่า view ไหนเปิดอยู่ ไม่ใช่ attribute hidden
+    switchView('dash');
+    const panel = document.getElementById('pwsPanel');
+    assert(panel && !panel.classList.contains('on'), 'เปลี่ยนไปหน้าอื่นแล้ว panel ใหม่ยังโชว์อยู่');
+    const dash = document.getElementById('dashView');
+    assert(dash && dash.classList.contains('on'), 'หน้าเดิมเปิดไม่ได้เมื่อมี panel ใหม่');
+
+    // แล้วกดกลับเข้า workspace ต้องเปิดได้จริง ไม่ใช่ตกไปหน้า Customer Data
+    switchView('pws');
+    assert(panel.classList.contains('on'), 'กดปุ่ม workspace แล้วไม่เปิด');
+    const input = document.getElementById('inputView');
+    assert(input && !input.classList.contains('on'), 'กดปุ่ม workspace แล้วตกไปหน้าเดิม');
+  });
+
   test('secure mode never offers first-Admin browser creation', function(){
     reset();
     authChecking = false;
