@@ -92,6 +92,64 @@ begin; set local role authenticated; select set_config('request.jwt.claim.sub','
 \endif
 rollback;
 
+-- PD ต้องแก้หมวด Job Data ที่ canEditSection() เปิดให้ได้จริง
+-- ก่อนหน้านี้ pd_keys มีแค่ rows/rdUpdated/modNote ทำให้ UI ยอมให้กดบันทึกแล้ว
+-- เซิร์ฟเวอร์ปฏิเสธ 42501 → PostgREST ตอบ 403 → ผู้ใช้ถูกเด้งออกจากระบบ
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','44444444-4444-4444-4444-444444444444',true);
+update public.fs_records set data=jsonb_set(data,'{conceptStr}','"เซรั่มบำรุงผิวหน้า"') where id='A00001';
+\if :ERROR
+  \echo 'FAIL PD could not edit the product concept'
+  \quit 1
+\else
+  \echo 'PASS PD edits product section'
+\endif
+rollback;
+
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','44444444-4444-4444-4444-444444444444',true);
+update public.fs_records set data = data
+  || jsonb_build_object('color','ใส','scent','ไม่มีกลิ่น','packType','ขวดปั๊ม','widthCm','4','lengthCm','12')
+  || jsonb_build_object('finalTarget','ผู้หญิง 25-35','gender','หญิง','price','390','priority','สูง','fdaType','เครื่องสำอาง')
+  || jsonb_build_object('allBenefits','["ลดเลือนริ้วรอย"]'::jsonb,'benefits','["ลดเลือนริ้วรอย"]'::jsonb,'cons','["แพ้ง่ายควรทดสอบ"]'::jsonb,'notes','ทดสอบ')
+  where id='A00001';
+\if :ERROR
+  \echo 'FAIL PD could not edit spec/target/benefit sections'
+  \quit 1
+\else
+  \echo 'PASS PD edits spec, target and benefit sections'
+\endif
+rollback;
+
+-- แต่สิทธิ์ที่เพิ่มให้ต้องไม่เลยขอบเขต: กล่องลูกค้า & แบรนด์ ยังล็อกอยู่ทุก Role
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','44444444-4444-4444-4444-444444444444',true);
+update public.fs_records set data=jsonb_set(data,'{brand}','"Rebranded by PD"') where id='A00001';
+\if :ERROR
+  \echo 'PASS PD brand mutation still denied'
+\else
+  \echo 'FAIL PD changed brand field'
+  \quit 1
+\endif
+rollback;
+
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','44444444-4444-4444-4444-444444444444',true);
+update public.fs_records set data=jsonb_set(data,'{salesOwner}','"PD One"') where id='A00001';
+\if :ERROR
+  \echo 'PASS PD salesOwner mutation still denied'
+\else
+  \echo 'FAIL PD reassigned the sales owner'
+  \quit 1
+\endif
+rollback;
+
+begin; set local role authenticated; select set_config('request.jwt.claim.sub','44444444-4444-4444-4444-444444444444',true);
+update public.fs_records set data=jsonb_set(data,'{closed}','{"by":"PD One","at":"now","ts":1}'::jsonb) where id='A00001';
+\if :ERROR
+  \echo 'PASS PD still cannot close a job'
+\else
+  \echo 'FAIL PD closed a job'
+  \quit 1
+\endif
+rollback;
+
 begin; set local role authenticated; select set_config('request.jwt.claim.sub','55555555-5555-5555-5555-555555555555',true); update public.fs_chats set data=jsonb_set(data,'{approvals,pd}','{"by":"RA One"}') where job_id='A00001';
 \if :ERROR
   \echo 'PASS RA cannot change PD approval'

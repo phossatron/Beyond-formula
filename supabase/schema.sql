@@ -173,7 +173,26 @@ as $$
 declare
   actor_role text := private.fs_current_role();
   actor_name text := private.fs_current_name();
-  pd_keys text[] := array['rows','rdUpdated','modNote'];
+  -- ฟิลด์ที่ PD แก้ได้ ต้องตรงกับ JD_SECTIONS ที่ canEditSection() เปิดให้ PD แก้
+  -- ใน index.html (หมวด product / spec / target / benefit) มิฉะนั้น UI จะยอมให้กด
+  -- บันทึกแล้วเซิร์ฟเวอร์ปฏิเสธด้วย 42501 → 403 → ผู้ใช้ถูกเด้งออกจากระบบ
+  --
+  -- policy records_role_update อนุญาต 'pd' อยู่แล้ว รายการนี้จึงเป็นการปรับ
+  -- field-level guard ให้ตามหลังฟีเจอร์แก้ Job Data ที่เพิ่มเข้ามาทีหลัง
+  -- ไม่ใช่การเปิดสิทธิ์ระดับตารางใหม่
+  pd_keys text[] := array[
+    'rows','rdUpdated','modNote',
+    -- product
+    'conceptStr','form','size','sizeUnit','uw','uwUnit','cat','subcat',
+    -- spec
+    'color','scent','flavor','packType','widthCm','lengthCm',
+    -- target
+    'finalTarget','gender','price','priority','fdaType',
+    -- benefit
+    'allBenefits','cons','notes',
+    -- allBenefits ถูกมิเรอร์ลง benefits (ฟิลด์เดิม) โดย saveJobSection เสมอ
+    'benefits'
+  ];
 begin
   if actor_role is null or actor_name is null then
     raise exception 'active membership required' using errcode='42501';
