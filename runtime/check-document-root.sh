@@ -12,9 +12,15 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 plist="$root/runtime/com.beyond-formula.runtime.plist"
 
 served="$(awk '/--directory/{getline; gsub(/.*<string>|<\/string>.*/,""); print; exit}' "$plist" 2>/dev/null)"
+# อ่าน plist ไม่ออก = ตรวจไม่ได้ ไม่ใช่ "ไม่มีปัญหา" · การตอบ PASS ตรงนี้จะทำให้
+# การจัดรูปแบบ plist ใหม่กลายเป็นวิธีปิดการตรวจแบบเงียบ ๆ จึงต้องล้มให้ดัง
 if [ -z "$served" ]; then
-  echo "SKIP ไม่พบ --directory ใน $plist"
-  exit 0
+  echo "FAIL อ่าน --directory จาก $plist ไม่ได้ — ตรวจไม่ได้ ไม่ใช่ว่าปลอดภัย"
+  exit 1
+fi
+if [ ! -d "$served" ]; then
+  echo "FAIL document root ที่ plist ระบุไม่มีอยู่จริง: $served"
+  exit 1
 fi
 echo "document root: $served"
 
