@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Content-Security-Policy — ชั้นจำกัดปลายทางของ private-workspace bundle
+  bundle ถูก import() เข้ามาทำงานใน origin เดียวกับ Formula จึงอ่าน
+  sessionStorage.fs_auth_session ได้ CSP นี้ไม่ได้กันการ "อ่าน" แต่จำกัด "ปลายทาง
+  ที่ส่งออกได้" ให้เหลือเฉพาะที่ประกาศไว้เท่านั้น (ดู docs/PRIVATE_WORKSPACE_CSP.md)
+  ถ้าตั้ง SCIENCE_WORKSPACE_API_ORIGIN เป็น origin ใหม่ ต้องเพิ่ม origin นั้นลงใน
+  connect-src ด้านล่างด้วย มิฉะนั้น loader จะปฏิเสธการ mount แบบ fail-closed
+  (ดู pwsCspAllowsConnect) แทนที่จะพังเงียบ ๆ ตอนยิง request
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Beyond Lab — Formula Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -649,7 +659,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-05.3</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-05.4</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -6617,6 +6627,53 @@ function sbManualSync(){ if(sbOn() && authSession){ sbErr=''; sbCycle(); } }
 let pwsState = null;
 let pwsPending = null;
 
+let pwsCspWarned = false;
+
+/**
+ * อ่าน connect-src จาก CSP ของหน้านี้ · คืน null เมื่อไม่มี CSP หรือไม่มี connect-src
+ * (ไม่มี directive = เบราว์เซอร์ fallback ไป default-src ซึ่งเราถือว่า "ไม่รู้" และ
+ * ให้ผู้เรียกตัดสินใจแบบปิดไว้ก่อน)
+ */
+function pwsCspConnectSrc(){
+  const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+  const content = meta && meta.getAttribute('content');
+  if(typeof content !== 'string' || content === '') return null;
+  for(const directive of content.split(';')){
+    const parts = directive.trim().split(/\s+/).filter(Boolean);
+    if(parts.length && parts[0].toLowerCase() === 'connect-src') return parts.slice(1);
+  }
+  return null;
+}
+
+/**
+ * CSP ยอมให้ยิงไป origin นี้หรือไม่ · ตอบ false เมื่อไม่มี CSP ให้ตรวจ เพื่อไม่ให้
+ * หน้าที่ลืมประกาศ CSP กลายเป็นทางผ่านที่ bundle ส่งข้อมูลออกไปไหนก็ได้
+ */
+function pwsCspAllowsConnect(origin){
+  const sources = pwsCspConnectSrc();
+  if(!sources) return false;
+  let target;
+  try{ target = new URL(origin); }catch(err){ return false; }
+  return sources.some(function(source){
+    if(source === '*') return true;
+    let candidate = source;
+    if(candidate.startsWith("'")) return false;            // 'self' ไม่ใช่ origin ภายนอก
+    if(candidate.indexOf('://') === -1) candidate = 'https://' + candidate;
+    const wildcard = candidate.indexOf('://*.');
+    if(wildcard !== -1){
+      const scheme = candidate.slice(0, wildcard + 3);
+      const suffix = candidate.slice(wildcard + 5).replace(/\/+$/, '');
+      if(scheme !== target.protocol + '//') return false;
+      if(!suffix || suffix.indexOf('*') !== -1) return false;
+      return target.host.length > suffix.length && target.host.endsWith('.' + suffix);
+    }
+    let parsed;
+    try{ parsed = new URL(candidate); }catch(err){ return false; }
+    if(parsed.pathname !== '/' || parsed.search || parsed.hash) return false;
+    return parsed.origin === target.origin;
+  });
+}
+
 /** origin ที่อนุมัติต้องเป็น HTTPS origin เปล่า ๆ เท่านั้น ไม่มี path ไม่มี wildcard */
 function pwsApprovedOrigin(){
   const value = SCIENCE_WORKSPACE_API_ORIGIN;
@@ -6630,6 +6687,15 @@ function pwsApprovedOrigin(){
   // จะได้ค่าที่ไม่แมตช์อะไรเลยแบบเงียบ ๆ
   if(!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(url.hostname)) return '';
   if(value.replace(/\/+$/,'') !== url.origin) return '';
+  // fail-closed: bundle รันใน origin เดียวกับ Formula ถ้า CSP ไม่ได้อนุญาต origin นี้
+  // ไว้ การ mount จะได้ workspace ที่ยิง request ไม่ออก และ operator จะไม่รู้สาเหตุ
+  if(!pwsCspAllowsConnect(url.origin)){
+    if(!pwsCspWarned){
+      pwsCspWarned = true;
+      console.error('private workspace: configured origin is not allowed by the page connect-src policy; refusing to mount');
+    }
+    return '';
+  }
   return url.origin;
 }
 

@@ -250,7 +250,11 @@
   test('index.html ไม่มีคำว่า RD Science หรือเนื้อหา Science แบบ static เลย', function(){
     reset();
     // คนที่เปิด view-source โดยไม่มีสิทธิ์ ต้องไม่เห็นแม้แต่ร่องรอยว่ามีระบบนี้อยู่
-    const source = document.documentElement.outerHTML;
+    // นับเฉพาะเนื้อของ index.html จริง ๆ · ตัวเทสต์กับ mock ของ harness ถูกฉีดเข้ามา
+    // ในหน้าเดียวกัน และมีคำเหล่านี้อยู่ในชื่อเทสต์ ซึ่งไม่ได้ถูกส่งขึ้น deployment
+    const shipped = document.documentElement.cloneNode(true);
+    shipped.querySelectorAll('#fs-test-suite,#fs-test-prelude,#fs-test-results').forEach(function(node){ node.remove(); });
+    const source = shipped.outerHTML;
     assert(!/RD Science/i.test(source), 'index.html มีป้าย RD Science ฝังอยู่');
     assert(!/science[_-]?case|scienceWorkspace|escalation/i.test(source.replace(/SCIENCE_WORKSPACE_API_ORIGIN/g,'')),
       'index.html มีคำเฉพาะของงาน Science ฝังอยู่');
@@ -799,6 +803,65 @@
     });
     assert(!document.querySelector('#dashContent img'), 'stored record created executable dashboard HTML');
     assert(document.getElementById('d_title').textContent.includes('<img'), 'stored text was not preserved');
+  });
+
+  // ---------- Content-Security-Policy ของหน้า (QA3 I3) ----------
+  // bundle ถูก import() เข้ามารันใน origin เดียวกับ Formula จึงอ่าน
+  // sessionStorage.fs_auth_session ได้ · CSP กันไม่ได้ว่าอ่าน แต่กันได้ว่าส่งออกไปไหน
+
+  function cspMeta(){ return document.querySelector('meta[http-equiv="Content-Security-Policy"]'); }
+
+  test('หน้ามี CSP ที่ยังมีความหมาย ไม่มี unsafe-eval และไม่มี wildcard', function(){
+    const meta = cspMeta();
+    assert(meta, 'หน้าไม่มี Content-Security-Policy เลย');
+    const csp = meta.getAttribute('content');
+    assert(!/unsafe-eval/.test(csp), 'CSP ยอมให้ eval ได้');
+    assert(!/script-src[^;]*\s\*(\s|;|$)/.test(csp), 'script-src เป็น wildcard');
+    assert(!/connect-src[^;]*\s\*(\s|;|$)/.test(csp), 'connect-src เป็น wildcard');
+    assert(/object-src 'none'/.test(csp), 'CSP ไม่ได้ปิด object-src');
+    assert(/base-uri 'none'/.test(csp), 'CSP ไม่ได้ปิด base-uri');
+    assert(/connect-src /.test(csp), 'CSP ไม่ได้จำกัดปลายทางของ request');
+  });
+
+  test('connect-src ยอมเฉพาะ origin ที่ประกาศไว้', function(){
+    assert(pwsCspAllowsConnect('https://opc.example.test'), 'origin ที่ประกาศไว้กลับถูกปฏิเสธ');
+    assert(!pwsCspAllowsConnect('https://evil.test'), 'origin ที่ไม่ได้ประกาศกลับผ่าน');
+    assert(!pwsCspAllowsConnect('http://opc.example.test'), 'ยอมรับ origin ที่ไม่ใช่ HTTPS');
+    assert(!pwsCspAllowsConnect('not a url'), 'ยอมรับค่าที่ไม่ใช่ URL');
+  });
+
+  test('wildcard host ใน connect-src ต้องแมตช์เฉพาะ subdomain จริง', function(){
+    assert(pwsCspAllowsConnect('https://uumk.supabase.co'), 'subdomain ที่ถูกต้องกลับถูกปฏิเสธ');
+    assert(!pwsCspAllowsConnect('https://supabase.co'), 'โดเมนแม่ผ่าน wildcard ได้');
+    assert(!pwsCspAllowsConnect('https://evil-supabase.co'), 'โดเมนที่แค่ลงท้ายคล้ายกันผ่านได้');
+    assert(!pwsCspAllowsConnect('https://supabase.co.evil.test'), 'suffix ถูกใช้เป็น prefix ได้');
+  });
+
+  test('ไม่มี CSP ให้ตรวจ = ปฏิเสธไว้ก่อน', function(){
+    const meta = cspMeta();
+    const saved = meta.getAttribute('content');
+    try{
+      meta.setAttribute('content', "default-src 'self'");
+      equal(pwsCspConnectSrc(), null, 'ไม่มี connect-src แต่ยังตอบว่ารู้');
+      assert(!pwsCspAllowsConnect('https://opc.example.test'), 'ไม่มี connect-src แต่กลับปล่อยผ่าน');
+    }finally{
+      meta.setAttribute('content', saved);
+    }
+  });
+
+  test('origin ที่ CSP ไม่อนุญาต ต้องไม่ mount และไม่ยิง request', async function(){
+    reset();
+    workspaceSession();
+    // origin นี้ถูกต้องตามกฎ HTTPS ทุกข้อ ต่างกันแค่ไม่ได้อยู่ใน connect-src
+    SCIENCE_WORKSPACE_API_ORIGIN = 'https://evil.test';
+    const before = domFingerprint();
+
+    equal(pwsApprovedOrigin(), '', 'origin นอก CSP ผ่าน preflight ไปได้');
+    await mountPrivateWorkspace();
+
+    equal(window.__fetchCalls.length, 0, 'ยิง request ไป origin ที่ CSP บล็อกอยู่ดี');
+    equal(domFingerprint(), before, 'DOM ของเดิมเปลี่ยนไป');
+    equal(document.getElementById('pwsNav'), null, 'สร้างปุ่มทั้งที่ mount ไม่ได้');
   });
 
   async function run(){

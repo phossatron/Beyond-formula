@@ -17,7 +17,30 @@ html = html
   .replace(/let SB_URL = '[^']*';/, "let SB_URL = 'https://test-project.supabase.co';")
   .replace(/let SB_KEY = '[^']*';/, "let SB_KEY = 'sb_publishable_test_only';");
 
-const mockPrelude = `<script>
+// CSP ของ index.html ต้องคงคุณสมบัติที่ทำให้มันมีความหมาย ก่อนจะถูกดัดแปลงเพื่อเทสต์
+const cspMatch = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)">/);
+if(!cspMatch){
+  throw new Error('index.html no longer declares a Content-Security-Policy');
+}
+const productionCsp = cspMatch[1];
+for(const forbidden of ['unsafe-eval', "script-src *", "connect-src *", "default-src *"]){
+  if(productionCsp.includes(forbidden)){
+    throw new Error('The Content-Security-Policy in index.html is too permissive: ' + forbidden);
+  }
+}
+for(const required of ["object-src 'none'", "base-uri 'none'", 'connect-src ']){
+  if(!productionCsp.includes(required)){
+    throw new Error('The Content-Security-Policy in index.html is missing ' + required);
+  }
+}
+// origin ทดสอบต้องถูกอนุญาตเหมือน origin จริงของ deployment มิฉะนั้น loader จะ
+// ปฏิเสธ mount แบบ fail-closed และเทสต์ workspace ทั้งชุดจะวัดอะไรไม่ได้เลย
+// `https://evil.test` จงใจไม่อยู่ในรายการ เพื่อให้เทสต์ทางลบยังพิสูจน์ได้จริง
+html = html.replace(
+  /(<meta http-equiv="Content-Security-Policy" content="[^"]*?connect-src )/,
+  '$1https://opc.example.test https://other.example.test ');
+
+const mockPrelude = `<script id="fs-test-prelude">
 window.__FS_TEST__ = true;
 window.__fetchCalls = [];
 window.__fetchQueue = [];
@@ -36,9 +59,15 @@ window.fetch = async function(url, options){
 </script>`;
 
 html = html.replace(/<script>\s*\/\/ ===================================================================/, mockPrelude + '\n<script>\n// ===================================================================');
-html = html.replace('</body>', '<script src="tests/formula-studio.test.js"></script>\n</body>');
+// เทสต์ต้อง inline · หน้าเปิดผ่าน file:// ซึ่ง 'self' ของ CSP ไม่แมตช์ไฟล์ข้างเคียง
+// ถ้าใช้ <script src> แทน เทสต์จะถูก CSP บล็อกและ harness จะเงียบไปเฉย ๆ
+const suiteSource = fs.readFileSync(path.join(root, 'tests', 'formula-studio.test.js'), 'utf8');
+if(suiteSource.includes('</script')){
+  throw new Error('The test suite cannot be inlined because it contains a script end tag');
+}
+html = html.replace('</body>', '<script id="fs-test-suite">\n' + suiteSource + '\n</script>\n</body>');
 
-if(!html.includes('window.__FS_TEST__ = true') || !html.includes('tests/formula-studio.test.js')){
+if(!html.includes('window.__FS_TEST__ = true') || !html.includes(suiteSource)){
   throw new Error('Could not inject the deterministic browser harness');
 }
 if((originalUrl && html.includes(originalUrl)) || (originalKey && html.includes(originalKey))){
