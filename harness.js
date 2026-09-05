@@ -36,9 +36,13 @@ for(const required of ["object-src 'none'", "base-uri 'none'", 'connect-src ']){
 // origin ทดสอบต้องถูกอนุญาตเหมือน origin จริงของ deployment มิฉะนั้น loader จะ
 // ปฏิเสธ mount แบบ fail-closed และเทสต์ workspace ทั้งชุดจะวัดอะไรไม่ได้เลย
 // `https://evil.test` จงใจไม่อยู่ในรายการ เพื่อให้เทสต์ทางลบยังพิสูจน์ได้จริง
-html = html.replace(
-  /(<meta http-equiv="Content-Security-Policy" content="[^"]*?connect-src )/,
-  '$1https://opc.example.test https://other.example.test ');
+html = html.replace(/(<meta http-equiv="Content-Security-Policy" content=")([^"]*)(">)/, function(match, open, policy, close){
+  let rewritten = policy;
+  // นโยบายจริงปักหมุด Supabase host ของ deployment ไว้ ต้องเปลี่ยนเป็นของเทสต์
+  // ด้วย มิฉะนั้น config ของ production จะติดไปกับไฟล์เทสต์
+  if(originalUrl) rewritten = rewritten.split(originalUrl).join('https://test-project.supabase.co');
+  return open + rewritten.replace('connect-src ', 'connect-src https://opc.example.test https://other.example.test ') + close;
+});
 
 const mockPrelude = `<script id="fs-test-prelude">
 window.__FS_TEST__ = true;

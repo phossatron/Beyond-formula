@@ -831,10 +831,26 @@
   });
 
   test('wildcard host ใน connect-src ต้องแมตช์เฉพาะ subdomain จริง', function(){
-    assert(pwsCspAllowsConnect('https://uumk.supabase.co'), 'subdomain ที่ถูกต้องกลับถูกปฏิเสธ');
-    assert(!pwsCspAllowsConnect('https://supabase.co'), 'โดเมนแม่ผ่าน wildcard ได้');
-    assert(!pwsCspAllowsConnect('https://evil-supabase.co'), 'โดเมนที่แค่ลงท้ายคล้ายกันผ่านได้');
-    assert(!pwsCspAllowsConnect('https://supabase.co.evil.test'), 'suffix ถูกใช้เป็น prefix ได้');
+    // นโยบายที่ส่งขึ้นจริงปักหมุด host เต็ม ๆ ไม่มี wildcard · เทสต์นี้จึงสลับ
+    // นโยบายชั่วคราวเพื่อพิสูจน์ตัวแยกวิเคราะห์ ไม่ใช่เพื่อรับรอง wildcard ในของจริง
+    const meta = cspMeta();
+    const saved = meta.getAttribute('content');
+    try{
+      meta.setAttribute('content', "connect-src 'self' https://*.supabase.co");
+      assert(pwsCspAllowsConnect('https://uumk.supabase.co'), 'subdomain ที่ถูกต้องกลับถูกปฏิเสธ');
+      assert(!pwsCspAllowsConnect('https://supabase.co'), 'โดเมนแม่ผ่าน wildcard ได้');
+      assert(!pwsCspAllowsConnect('https://evil-supabase.co'), 'โดเมนที่แค่ลงท้ายคล้ายกันผ่านได้');
+      assert(!pwsCspAllowsConnect('https://supabase.co.evil.test'), 'suffix ถูกใช้เป็น prefix ได้');
+    }finally{
+      meta.setAttribute('content', saved);
+    }
+  });
+
+  test('นโยบายที่ส่งขึ้นจริงต้องปักหมุด Supabase host ไม่ใช่ wildcard', function(){
+    // wildcard จะเปิดให้ bundle ส่ง access token ไป project อื่นของ Supabase ได้
+    const csp = cspMeta().getAttribute('content');
+    const connect = (csp.split(';').find(function(part){ return part.trim().startsWith('connect-src'); }) || '');
+    assert(!/\*\.supabase\.co/.test(connect), 'connect-src ยังเปิดกว้างให้ทุก project ของ Supabase');
   });
 
   test('ไม่มี CSP ให้ตรวจ = ปฏิเสธไว้ก่อน', function(){
