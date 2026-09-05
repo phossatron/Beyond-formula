@@ -486,6 +486,49 @@
     equal(pwsState.panelEl.textContent,'second','wrong mode');
   });
 
+  test('bundle request transport confines origin, captures auth, and expires with its workspace', async function(){
+    prepareWorkspace();window.__privateRequest=null;
+    window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host,options){window.__privateRequest=options.request;return {destroy(){}};}'));
+    await mountPrivateWorkspace();assert(typeof window.__privateRequest==='function','missing transport');
+    const request=window.__privateRequest;
+    window.__fetchQueue.push(window.__mockResponse(200,{value:'ok'}));
+    const result=await request('/api/private-workspaces/test',{method:'POST',body:{question:'synthetic'}});
+    equal(result.value,'ok','response missing');
+    const call=window.__fetchCalls[2];
+    equal(call.options.headers.Authorization,'Bearer ws-token','wrong bearer');
+    equal(call.options.credentials,'omit','credentials attached');
+    equal(call.options.cache,'no-store','cache allowed');
+    equal(call.options.redirect,'error','redirect allowed');
+    equal(JSON.parse(call.options.body).question,'synthetic','body changed');
+    for(const path of ['https://evil.test/x','//evil.test/x','/api/other','/api/private-workspaces/../../other']){
+      let denied=false;try{await request(path);}catch(err){denied=true;}
+      assert(denied,'unsafe path accepted');
+    }
+    equal(window.__fetchCalls.length,3,'unsafe path requested');
+    authClearSession();let denied=false;try{await request('/api/private-workspaces/test');}catch(err){denied=true;}
+    assert(denied,'stale transport accepted');equal(window.__fetchCalls.length,3,'stale transport requested');
+  });
+
+  test('late transport JSON is discarded and denied status withdraws its own workspace', async function(){
+    prepareWorkspace();window.__privateRequest=null;
+    window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host,options){window.__privateRequest=options.request;return {destroy(){}};}'));
+    await mountPrivateWorkspace();assert(window.__privateRequest,'missing transport');
+    const entered=deferred(),release=deferred();
+    window.__fetchQueue.push({ok:true,status:200,json:()=>{entered.resolve();return release.promise;}});
+    const pending=window.__privateRequest('/api/private-workspaces/test').then(()=>false,()=>true);
+    await entered.promise;authClearSession();release.resolve({private:'old'});
+    assert(await pending,'stale JSON released');
+    for(const status of [401,403,404]){
+      prepareWorkspace();window.__fetchQueue.push(allowWorkspace());
+      window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host,options){window.__privateRequest=options.request;return {destroy(){}};}'));
+      await mountPrivateWorkspace();window.__fetchQueue.push(window.__mockResponse(status,{}));
+      let denied=false;try{await window.__privateRequest('/api/private-workspaces/test');}catch(err){denied=true;}
+      assert(denied,'denial accepted');equal(pwsState,null,'denial retained workspace: '+status);
+    }
+  });
+
   test('manifest request ใช้ bearer token ของผู้ใช้ ไม่ส่ง cookie และไม่ cache', async function(){
     reset();
     workspaceSession();
