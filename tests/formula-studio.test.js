@@ -8,6 +8,7 @@
     if(actual !== expected) throw new Error((message || 'values differ') + ` (expected ${expected}, got ${actual})`);
   }
   function reset(){
+    if(typeof teardownPrivateWorkspace === 'function') teardownPrivateWorkspace();
     localStorage.clear();
     sessionStorage.clear();
     window.__fetchCalls.length = 0;
@@ -236,16 +237,13 @@
   // ต้องไม่เปลี่ยนเลยเมื่อไม่มีสิทธิ์หรือไม่ได้ตั้งค่า
 
   function domFingerprint(){
-    // ลายนิ้วมือของหน้าจอเดิม: ปุ่มเมนู หัวข้อ และจำนวนโหนดใน .main
-    const nav = [...document.querySelectorAll('.side-item, .side-group')].map(el=>el.id || el.textContent.trim()).join('|');
-    const main = document.querySelector('.main');
-    return nav + '##' + (main ? main.children.length : -1);
+    return document.documentElement.outerHTML;
   }
 
   function workspaceSession(){
     authSession = {access_token:'ws-token', refresh_token:'r', expires_at:Date.now()/1000+3600,
       user:{id:'55555555-5555-5555-5555-555555555555', email:'rd@example.test'}};
-    authMembership = {name:'อาร์แอนด์ดี', role:'rd', active:true};
+    authMembership = {user_id:authSession.user.id, name:'อาร์แอนด์ดี', role:'rd', active:true};
     currentUser = 'อาร์แอนด์ดี';
   }
 
@@ -313,6 +311,181 @@
     assert(!Object.keys(localStorage).some(k=>/pws|science|workspace/i.test(k)), 'มี key ค้างใน localStorage');
   });
 
+  function deferred(){
+    let resolve;
+    const promise = new Promise(r=>{ resolve=r; });
+    return {promise, resolve};
+  }
+  function allowWorkspace(mode='workspace'){
+    return window.__mockResponse(200, {allowed:true,label:'Private test',
+      bundleUrl:'/bundle',version:'1',mode});
+  }
+  function prepareWorkspace(){
+    reset(); workspaceSession(); SCIENCE_WORKSPACE_API_ORIGIN='https://opc.example.test';
+  }
+
+  test('denied roles, inactive and missing membership make zero requests and preserve exact DOM', async function(){
+    for(const role of ['sales','opc','crm','monitor','pd','mkt','marketing','purchasing','unknown','toString','']){
+      prepareWorkspace(); authMembership.role=role;
+      const before=domFingerprint();
+      await mountPrivateWorkspace();
+      equal(window.__fetchCalls.length,0,'request for denied role '+role);
+      equal(domFingerprint(),before,'DOM changed for '+role);
+    }
+    for(const membership of [null,{role:'rd',active:false},{role:'rd',active:true},
+      {role:'rd',active:true,user_id:'different-user'}]){
+      prepareWorkspace(); authMembership=membership;
+      const before=domFingerprint();
+      await mountPrivateWorkspace();
+      equal(window.__fetchCalls.length,0,'request without active membership');
+      equal(domFingerprint(),before,'DOM changed without active membership');
+    }
+  });
+
+  test('logout during manifest response, manifest body or bundle body cannot recreate workspace', async function(){
+    for(const stage of ['response','manifest','bundle']){
+      prepareWorkspace(); const before=domFingerprint();
+      const entered=deferred(), release=deferred();
+      if(stage==='response') window.__fetchQueue.push(()=>{entered.resolve(); return release.promise;});
+      else if(stage==='manifest') window.__fetchQueue.push({ok:true,json:()=>{entered.resolve();return release.promise;}});
+      else {
+        window.__fetchQueue.push(allowWorkspace());
+        window.__fetchQueue.push({ok:true,text:()=>{entered.resolve();return release.promise;}});
+      }
+      const pending=mountPrivateWorkspace(); await entered.promise;
+      authClearSession();
+      release.resolve(stage==='response'?allowWorkspace():stage==='manifest'?
+        {allowed:true,label:'Private test',bundleUrl:'/bundle',version:'1',mode:'workspace'}:
+        'export function mount(host){host.textContent="late";}');
+      await pending;
+      equal(pwsState,null,'late state at '+stage);
+      equal(domFingerprint(),before,'late DOM at '+stage);
+      equal(window.__fetchCalls.length,stage==='bundle'?2:1,'extra request after logout');
+      assert(window.__fetchCalls[0].options.signal.aborted,'request was not aborted');
+    }
+  });
+
+  test('logout while async mount is pending destroys the late handle and listener', async function(){
+    prepareWorkspace(); const before=domFingerprint();
+    window.__lateMountEntered=deferred(); window.__lateMountRelease=deferred();
+    window.__lateHandleDestroyed=0; window.__lateEventCount=0;
+    window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200, `export async function mount(host){
+      const listener=()=>window.__lateEventCount++;
+      window.addEventListener('private-test-event',listener);
+      window.__lateMountEntered.resolve(); await window.__lateMountRelease.promise;
+      return {destroy(){window.__lateHandleDestroyed++;window.removeEventListener('private-test-event',listener);}};
+    }`));
+    const pending=mountPrivateWorkspace(); await window.__lateMountEntered.promise;
+    authClearSession(); window.__lateMountRelease.resolve(); await pending;
+    window.dispatchEvent(new Event('private-test-event'));
+    equal(window.__lateHandleDestroyed,1,'late handle not destroyed once');
+    equal(window.__lateEventCount,0,'late listener retained');
+    equal(pwsState,null,'late handle retained'); equal(domFingerprint(),before,'late DOM retained');
+  });
+
+  test('logout during module import cannot call mount or attach its handle', async function(){
+    prepareWorkspace();const before=domFingerprint();
+    window.__importEntered=deferred();window.__importRelease=deferred();window.__importMounts=0;
+    window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200, `
+      window.__importEntered.resolve();await window.__importRelease.promise;
+      export function mount(){window.__importMounts++;return {destroy(){}};}
+    `));
+    const pending=mountPrivateWorkspace();await window.__importEntered.promise;
+    authClearSession();window.__importRelease.resolve();await pending;
+    equal(window.__importMounts,0,'stale module called mount');
+    equal(pwsState,null,'stale import retained state');equal(domFingerprint(),before,'stale import changed DOM');
+  });
+
+  test('mounted workspace is replaced on token or identity change despite equal version and mode', async function(){
+    for(const change of [()=>authSession.access_token='next-token',()=>{authSession.user.id='next-user';authMembership.user_id='next-user';}]){
+      prepareWorkspace();window.__replacedDestroyed=0;
+      window.__fetchQueue.push(allowWorkspace());
+      window.__fetchQueue.push(window.__mockResponse(200,'export function mount(){return {destroy(){window.__replacedDestroyed++;}};}'));
+      await mountPrivateWorkspace();const old=pwsState;change();
+      window.__fetchQueue.push(allowWorkspace());
+      window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host){host.textContent="new context";}'));
+      await mountPrivateWorkspace();
+      assert(pwsState!==old,'stale same-version state reused');
+      equal(window.__replacedDestroyed,1,'old handle not removed');
+      equal(pwsState.panelEl.textContent,'new context','new identity not rendered');
+    }
+  });
+
+  test('session storage update immediately withdraws the mounted workspace', async function(){
+    prepareWorkspace();window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(){return {destroy(){}};}'));
+    await mountPrivateWorkspace();assert(pwsState,'setup failed');
+    authStoreSession({...authSession,access_token:'refreshed-token'});
+    equal(pwsState,null,'token update retained workspace');
+    equal(document.getElementById('pwsPanel'),null,'token update retained panel');
+    clearTimeout(authRefreshTimer);
+  });
+
+  test('older denied response cannot tear down a newer identity workspace', async function(){
+    prepareWorkspace(); const entered=deferred(),release=deferred();
+    window.__fetchQueue.push(()=>{entered.resolve();return release.promise;});
+    const old=mountPrivateWorkspace(); await entered.promise;
+    authSession={...authSession,access_token:'new-token',user:{...authSession.user,id:'66666666-6666-6666-6666-666666666666'}};
+    authMembership={...authMembership,user_id:authSession.user.id};
+    window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host){host.textContent="new identity";}'));
+    await mountPrivateWorkspace();
+    const state=pwsState; assert(state,'new identity did not mount');
+    release.resolve(window.__mockResponse(403,{})); await old;
+    equal(pwsState,state,'older denial tore down newer state');
+    equal(state.panelEl.textContent,'new identity','wrong identity rendered');
+  });
+
+  test('older network rejection cannot remove a newer workspace', async function(){
+    prepareWorkspace();const entered=deferred();let rejectOld;
+    window.__fetchQueue.push(()=>{entered.resolve();return new Promise((resolve,reject)=>{rejectOld=reject;});});
+    const old=mountPrivateWorkspace();await entered.promise;
+    authSession.access_token='new-token';
+    window.__fetchQueue.push(allowWorkspace());
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host){host.textContent="current";}'));
+    await mountPrivateWorkspace();const state=pwsState;
+    rejectOld(new Error('synthetic old failure'));await old;
+    equal(pwsState,state,'old catch removed new workspace');
+    equal(state.panelEl.textContent,'current','new workspace changed');
+  });
+
+  test('eligible roles still require server permission before fetching a bundle', async function(){
+    for(const role of ['rd','ra','admin']){
+      prepareWorkspace();authMembership.role=role;const before=domFingerprint();
+      window.__fetchQueue.push(window.__mockResponse(403,{}));await mountPrivateWorkspace();
+      equal(window.__fetchCalls.length,1,'did not stop after server denial for '+role);
+      equal(domFingerprint(),before,'server denied role changed DOM');
+    }
+  });
+
+  test('token, identity, membership, origin and local-mode changes fence pending bundle results', async function(){
+    for(const change of [()=>authSession.access_token='replacement',()=>authSession.user.id='replacement',
+      ()=>authMembership.role='ra',()=>authMembership.active=false,()=>{SB_URL='';SB_KEY='';},
+      ()=>SCIENCE_WORKSPACE_API_ORIGIN='https://other.example.test']){
+      prepareWorkspace(); const entered=deferred(),release=deferred();
+      window.__fetchQueue.push(allowWorkspace());
+      window.__fetchQueue.push({ok:true,text:()=>{entered.resolve();return release.promise;}});
+      const pending=mountPrivateWorkspace();await entered.promise;change();
+      release.resolve('export function mount(host){host.textContent="stale";}');await pending;
+      equal(pwsState,null,'changed context retained stale state');
+      equal(document.getElementById('pwsPanel'),null,'changed context created panel');
+    }
+  });
+
+  test('mode change replaces the old handle even when version stays the same', async function(){
+    prepareWorkspace();window.__oldModeDestroyed=0;
+    window.__fetchQueue.push(allowWorkspace('first'));
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(){return {destroy(){window.__oldModeDestroyed++;}};}'));
+    await mountPrivateWorkspace();const old=pwsState;
+    window.__fetchQueue.push(allowWorkspace('second'));
+    window.__fetchQueue.push(window.__mockResponse(200,'export function mount(host,{mode}){host.textContent=mode;}'));
+    await mountPrivateWorkspace();
+    assert(pwsState!==old,'old mode reused');equal(window.__oldModeDestroyed,1,'old mode not destroyed');
+    equal(pwsState.panelEl.textContent,'second','wrong mode');
+  });
+
   test('manifest request ใช้ bearer token ของผู้ใช้ ไม่ส่ง cookie และไม่ cache', async function(){
     reset();
     workspaceSession();
@@ -339,7 +512,7 @@
       version:'1', mode:'workspace'
     }));
     window.__fetchQueue.push(window.__mockResponse(200,
-      'window.__pwsMounted = (host)=>{ host.textContent = "workspace ready"; };'));
+      'export function mount(host){ host.textContent = "workspace ready"; }'));
 
     await mountPrivateWorkspace();
 
@@ -363,7 +536,7 @@
       allowed:true, label:'<img src=x onerror="window.__pwsXss=1">', 
       bundleUrl:'/api/private-workspaces/formula/bundle', version:'1', mode:'workspace'
     }));
-    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    window.__fetchQueue.push(window.__mockResponse(200, 'export function mount(){}'));
 
     await mountPrivateWorkspace();
 
@@ -397,7 +570,7 @@
       allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
       version:'1', mode:'workspace'
     }));
-    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    window.__fetchQueue.push(window.__mockResponse(200, 'export function mount(){}'));
     await mountPrivateWorkspace();
     assert(document.getElementById('pwsNav'), 'setup: ไม่ได้ mount');
 
@@ -416,7 +589,7 @@
       allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
       version:'1', mode:'workspace'
     }));
-    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    window.__fetchQueue.push(window.__mockResponse(200, 'export function mount(){}'));
     await mountPrivateWorkspace();
     assert(document.getElementById('pwsNav'), 'setup: ไม่ได้ mount');
 
@@ -436,7 +609,7 @@
       allowed:true, label:'RD Science', bundleUrl:'/api/private-workspaces/formula/bundle',
       version:'1', mode:'workspace'
     }));
-    window.__fetchQueue.push(window.__mockResponse(200, 'window.__pwsMounted=()=>{};'));
+    window.__fetchQueue.push(window.__mockResponse(200, 'export function mount(){}'));
     await mountPrivateWorkspace();
 
     // repo นี้ใช้ class 'on' เป็นตัวบอกว่า view ไหนเปิดอยู่ ไม่ใช่ attribute hidden

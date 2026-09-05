@@ -649,7 +649,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-05.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-05.2</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -6076,6 +6076,8 @@ function authStoreSession(session){
   if(!session || !session.access_token || !session.refresh_token) throw new Error('Invalid Auth session');
   const normalized = Object.assign({}, session);
   if(!normalized.expires_at) normalized.expires_at = Math.floor(Date.now()/1000) + Number(normalized.expires_in || 3600);
+  if(authSession && (authSession.access_token !== normalized.access_token ||
+      authSession.user?.id !== normalized.user?.id)) teardownPrivateWorkspace();
   authSession = normalized;
   // เบราว์เซอร์ที่บล็อกข้อมูลเว็บไซต์ (หน้าต่างส่วนตัว / นโยบายองค์กร) จะ throw ตรงนี้
   // ถ้าไม่ดัก error จะทะลุออกไปเป็น "ตรวจสอบอินเทอร์เน็ต" ซึ่งชี้สาเหตุผิดจนแก้ไม่ถูก
@@ -6181,6 +6183,8 @@ async function authFetchMembership(){
     authClearSession();
     throw new Error('Unknown membership role');
   }
+  if(authMembership && (authMembership.role !== membership.role ||
+      authMembership.user_id !== membership.user_id || authMembership.active !== membership.active)) teardownPrivateWorkspace();
   authMembership = membership;
   currentUser = membership.name;
   impersonator = '';
@@ -6610,7 +6614,8 @@ function sbManualSync(){ if(sbOn() && authSession){ sbErr=''; sbCycle(); } }
 //  "ไม่มีอะไรอยู่ตรงนั้น"
 // ===================================================================
 
-let pwsState = null;   // {navEl, panelEl, blobUrl, version}
+let pwsState = null;
+let pwsPending = null;
 
 /** origin ที่อนุมัติต้องเป็น HTTPS origin เปล่า ๆ เท่านั้น ไม่มี path ไม่มี wildcard */
 function pwsApprovedOrigin(){
@@ -6628,114 +6633,101 @@ function pwsApprovedOrigin(){
   return url.origin;
 }
 
-/** ถอนทุกอย่างที่ loader สร้างไว้ · เรียกซ้ำได้ปลอดภัย */
-function teardownPrivateWorkspace(){
-  if(!pwsState) return;
-  // ให้ bundle เก็บกวาดของตัวเองก่อน (timer, listener ที่ผูกไว้นอก panel)
-  try{
-    const handle = pwsState.handle;
-    if(handle && typeof handle.destroy === 'function') handle.destroy();
-  }catch(err){}
-  try{ if(pwsState.navEl && pwsState.navEl.parentNode) pwsState.navEl.parentNode.removeChild(pwsState.navEl); }catch(err){}
-  try{ if(pwsState.panelEl && pwsState.panelEl.parentNode) pwsState.panelEl.parentNode.removeChild(pwsState.panelEl); }catch(err){}
-  // ปล่อย Blob URL คืน ไม่งั้นโค้ดของ workspace ยังถูกอ้างถึงได้หลังผู้ใช้ออกจากระบบ
-  try{ if(pwsState.blobUrl) URL.revokeObjectURL(pwsState.blobUrl); }catch(err){}
-  pwsState = null;
+/** Local preflight only; the server still decides grants and assignments. */
+function pwsContext(){
+  const origin = pwsApprovedOrigin();
+  if(!origin || !sbOn() || !authSession?.access_token || !authSession.user?.id ||
+      authMembership?.active !== true || authMembership.user_id !== authSession.user.id ||
+      !['rd','ra','admin'].includes(authMembership.role)) return '';
+  return JSON.stringify([origin, authSession.user.id, authSession.access_token,
+    authMembership.role, authMembership.user_id || '']);
 }
 
-/**
- * ถาม manifest แล้ว mount ถ้าได้รับอนุญาต
- *
- * เรียกได้บ่อยเท่าที่ต้องการ · ถ้าสิทธิ์หายไประหว่างทาง มันจะถอนของเดิมออกให้เอง
- */
+function pwsRemoveState(){
+  const state = pwsState;
+  pwsState = null;
+  if(!state) return;
+  state.controller.abort();
+  try{ if(typeof state.handle?.destroy === 'function') state.handle.destroy(); }catch(err){}
+  try{ state.navEl.remove(); }catch(err){}
+  try{ state.panelEl.remove(); }catch(err){}
+  try{ if(state.blobUrl) URL.revokeObjectURL(state.blobUrl); }catch(err){}
+}
+
+/** ถอนทุกอย่างที่ loader สร้างไว้ รวมงานที่ยังรอผลอยู่ */
+function teardownPrivateWorkspace(){
+  const pending = pwsPending;
+  pwsPending = null;
+  if(pending) pending.controller.abort();
+  pwsRemoveState();
+}
+
+/** ถาม manifest ใหม่เสมอ และรับผลเฉพาะ session ที่เริ่มคำขอนั้น */
 async function mountPrivateWorkspace(){
+  const context = pwsContext();
+  if(!context){ teardownPrivateWorkspace(); return; }
+  if(pwsPending || (pwsState && pwsState.context !== context)) teardownPrivateWorkspace();
   const origin = pwsApprovedOrigin();
-  // ไม่ตั้งค่า / origin ไม่ปลอดภัย / ยังไม่ล็อกอิน / local-only mode = เงียบสนิท
-  if(!origin || !sbOn() || !authSession || !authSession.access_token){
-    teardownPrivateWorkspace();
-    return;
-  }
-
-  let manifest = null;
+  const token = authSession.access_token;
+  const request = {context, controller:new AbortController()};
+  pwsPending = request;
+  const current = ()=>{
+    if(pwsPending !== request || request.controller.signal.aborted) return false;
+    if(pwsContext() !== context){ teardownPrivateWorkspace(); return false; }
+    return true;
+  };
+  const options = {method:'GET', headers:{Authorization:'Bearer ' + token},
+    credentials:'omit', cache:'no-store', signal:request.controller.signal};
   try{
-    const res = await fetch(origin + '/api/private-workspaces/formula', {
-      method:'GET',
-      headers:{Authorization:'Bearer ' + authSession.access_token},
-      credentials:'omit',   // ตัวตนคือ bearer token เท่านั้น ไม่เคยพึ่ง cookie
-      cache:'no-store'      // คำตอบเป็นของเฉพาะคน ห้ามให้ cache ไหนเก็บไว้
-    });
-    if(!res.ok){ teardownPrivateWorkspace(); return; }
-    manifest = await res.json();
-  }catch(err){
-    // ต่อไม่ติดก็คือไม่มี · ไม่ประกาศให้ผู้ใช้รู้ว่ามีอะไรที่เขาเข้าไม่ถึง
-    teardownPrivateWorkspace();
-    return;
-  }
-
-  if(!manifest || manifest.allowed !== true || typeof manifest.label !== 'string' || !manifest.label){
-    teardownPrivateWorkspace();
-    return;
-  }
-
-  // bundle ต้องอยู่บน origin ที่อนุมัติไว้เท่านั้น · path สัมพัทธ์แปลงจาก origin นั้น
-  let bundleUrl;
-  try{ bundleUrl = new URL(String(manifest.bundleUrl || ''), origin + '/'); }
-  catch(err){ teardownPrivateWorkspace(); return; }
-  if(bundleUrl.origin !== origin || bundleUrl.protocol !== 'https:'){
-    teardownPrivateWorkspace();
-    return;
-  }
-
-  // กุญแจต้องมี mode ด้วย ไม่ใช่แค่ version
-  //
-  // สองโหมดใช้เลข version เดียวกันได้ตามปกติ ถ้าเทียบแค่ version คนที่ถูกลดสิทธิ์
-  // ลงมาเป็นโหมดที่แคบกว่า จะยังถือ bundle ของโหมดกว้างไว้ในเบราว์เซอร์ต่อไป
-  // เพราะโค้ดคิดว่า "ของเดิมยังใช้ได้" · และถ้า manifest ไม่ส่ง version มาเลย
-  // undefined === undefined จะเป็นจริง แล้วมันจะไม่ mount อะไรเลยตลอดกาล
-  const pwsKey = String(manifest.version || '') + '\u0000' + String(manifest.mode || '');
-  if(pwsState && pwsState.key === pwsKey) return;
-  teardownPrivateWorkspace();
-
-  let source;
-  try{
-    const res = await fetch(bundleUrl.toString(), {
-      method:'GET',
-      headers:{Authorization:'Bearer ' + authSession.access_token},
-      credentials:'omit', cache:'no-store'
-    });
-    if(!res.ok){ return; }
-    source = await res.text();
-  }catch(err){ return; }
-
-  // สร้าง panel ก่อน · ถ้าสร้างปุ่มก่อนแล้ว panel ล้ม ปุ่มจะค้างอยู่โดยที่ pwsState
-  // ยังเป็น null ทำให้ teardown เอาออกไม่ได้ตลอดกาล
-  const panel = pwsCreatePanel();
-  if(!panel) return;
-  const nav = pwsCreateNav(manifest.label);
-  if(!nav){ if(panel.parentNode) panel.parentNode.removeChild(panel); return; }
-
-  let blobUrl = '';
-  try{
-    blobUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
-  }catch(err){ blobUrl = ''; }
-
-  pwsState = {navEl:nav, panelEl:panel, blobUrl:blobUrl, key:pwsKey, handle:null};
-
-  if(blobUrl){
-    try{
-      const mod = await import(blobUrl);
-      // ชื่อ export ต้องเป็นชื่อกลาง ๆ · ไฟล์นี้ต้องไม่รู้ว่า workspace ที่โหลดมาคืออะไร
-      const mount = (mod && (mod.mount || mod.default)) || window.__pwsMounted;
-      if(typeof mount === 'function'){
-        // เก็บ handle ไว้ · ถ้าทิ้ง destroy() จะไม่มีวันถูกเรียก แล้ว bundle ที่ตั้ง
-        // timer หรือผูก listener ไว้ที่ window จะรอดจากการออกจากระบบ
-        const handle = mount(panel, {mode:manifest.mode});
-        if(pwsState) pwsState.handle = handle;
-      }
-    }catch(err){
-      // bundle รันไม่ได้ ก็ยังคงแท็บไว้พร้อมข้อความ ดีกว่าหายไปเฉย ๆ โดยไม่บอกอะไร
-      panel.textContent = 'เปิดพื้นที่ทำงานส่วนตัวไม่สำเร็จ กรุณาลองใหม่';
+    const response = await fetch(origin + '/api/private-workspaces/formula', options);
+    if(!current()) return;
+    if(!response.ok){ teardownPrivateWorkspace(); return; }
+    const manifest = await response.json();
+    if(!current()) return;
+    if(!manifest || manifest.allowed !== true || typeof manifest.label !== 'string' || !manifest.label){
+      teardownPrivateWorkspace(); return;
     }
+    const bundleUrl = new URL(String(manifest.bundleUrl || ''), origin + '/');
+    if(bundleUrl.origin !== origin || bundleUrl.protocol !== 'https:' || bundleUrl.username || bundleUrl.password){
+      teardownPrivateWorkspace(); return;
+    }
+    const key = String(manifest.version || '') + '\u0000' + String(manifest.mode || '');
+    if(pwsState && pwsState.key === key && pwsState.context === context) return;
+    pwsRemoveState();
+    const bundle = await fetch(bundleUrl.toString(), options);
+    if(!current()) return;
+    if(!bundle.ok) return;
+    const source = await bundle.text();
+    if(!current()) return;
+    const panel = pwsCreatePanel();
+    if(!panel) return;
+    const nav = pwsCreateNav(manifest.label);
+    if(!nav){ panel.remove(); return; }
+    const state = {navEl:nav, panelEl:panel, blobUrl:'', key, context,
+      controller:request.controller, handle:null};
+    pwsState = state;
+    try{
+      state.blobUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+      const mod = await import(state.blobUrl);
+      if(!current()) return;
+      const mount = mod && (mod.mount || mod.default);
+      if(typeof mount !== 'function') throw new Error('Missing mount');
+      const handle = await mount(panel, {mode:manifest.mode, signal:request.controller.signal});
+      if(!current() || pwsState !== state){
+        try{ if(typeof handle?.destroy === 'function') handle.destroy(); }catch(err){}
+        return;
+      }
+      state.handle = handle;
+    }catch(err){
+      if(current() && pwsState === state){
+        panel.textContent = 'เปิดพื้นที่ทำงานส่วนตัวไม่สำเร็จ กรุณาลองใหม่';
+      }
+    }
+  }catch(err){
+    // ผลผิดพลาดเก่าห้ามถอนพื้นที่ทำงานของ session ใหม่
+    if(current()) teardownPrivateWorkspace();
+  }finally{
+    if(pwsPending === request) pwsPending = null;
   }
 }
 
