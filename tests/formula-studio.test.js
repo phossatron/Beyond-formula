@@ -15,8 +15,11 @@
     window.__fetchQueue.length = 0;
     SB_URL = 'https://test-project.supabase.co';
     SB_KEY = 'sb_publishable_test_only';
+    OPC_USER_REFERENCE_ENABLED = false;
+    delete window.__FS_OPC_USER_REFERENCE_PROVIDER__;
     if(typeof authSession !== 'undefined') authSession = null;
     if(typeof authMembership !== 'undefined') authMembership = null;
+    if(typeof authOpcUserReference !== 'undefined') authOpcUserReference = null;
     if(typeof authChecking !== 'undefined') authChecking = false;
     currentUser = '';
     impersonator = '';
@@ -194,6 +197,66 @@
     const friendly = authFriendlyError(caught);
     assert(friendly.includes('fs_memberships'), 'ข้อความไม่ได้บอกว่าต้องเพิ่ม membership: ' + friendly);
     assert(!friendly.includes('อินเทอร์เน็ต'), 'ยังโทษอินเทอร์เน็ตอยู่');
+  });
+
+  test('OPC user reference is disabled by default and preserves the current Admin auth flow', async function(){
+    reset();
+    authSession = {access_token:'admin-token',refresh_token:'refresh-test',expires_at:Date.now()/1000+3600,
+      user:{id:'55555555-5555-5555-5555-555555555555',email:'admin@example.test'}};
+    let providerCalled = false;
+    window.__FS_OPC_USER_REFERENCE_PROVIDER__ = async function(){ providerCalled = true; return []; };
+    window.__fetchQueue.push(window.__mockResponse(200, [
+      {user_id:'55555555-5555-5555-5555-555555555555',name:'Admin Test',role:'admin',active:true}
+    ]));
+    await authFetchMembership();
+    equal(providerCalled, false, 'disabled OPC reference provider was called');
+    equal(authMembership.role, 'admin', 'legacy Admin membership flow changed');
+    equal(authOpcUserReference, null, 'disabled OPC reference was retained');
+  });
+
+  test('enabled OPC reference maps the authenticated user without using Supabase as the mapping source', async function(){
+    reset();
+    OPC_USER_REFERENCE_ENABLED = true;
+    authSession = {access_token:'admin-token',refresh_token:'refresh-test',expires_at:Date.now()/1000+3600,
+      user:{id:'66666666-6666-6666-6666-666666666666',email:'admin@example.test'}};
+    let providerRequest = null;
+    window.__FS_OPC_USER_REFERENCE_PROVIDER__ = async function(request){
+      providerRequest = request;
+      return [{
+        'OPC Username':'opc-admin-1', 'User Name':'Admin From OPC',
+        'Position / Department':'Management', 'Current Role':'admin',
+        'OPC Login Email':'admin@example.test', 'Cloudflare Access Email':'', 'User Status':'Active'
+      }];
+    };
+    window.__fetchQueue.push(window.__mockResponse(200, [
+      {user_id:'66666666-6666-6666-6666-666666666666',name:'Legacy Admin',role:'admin',active:true}
+    ]));
+    await authFetchMembership();
+    equal(providerRequest.source, 'opc-workflow', 'wrong identity reference source');
+    equal(providerRequest.auth_user.email, 'admin@example.test', 'provider did not receive Auth identity for lookup');
+    equal(authOpcUserReference.opc_user_id, 'opc-admin-1', 'OPC user reference was not retained');
+    equal(authOpcUserReference.name, 'Admin From OPC', 'OPC display name was not normalized');
+    equal(currentUser, 'Legacy Admin', 'legacy Formula display identity was changed');
+    equal(currentRole(), 'admin', 'Supabase/Auth role boundary was bypassed');
+  });
+
+  test('enabled OPC reference fails closed when the authenticated user is not active in the reference', async function(){
+    reset();
+    OPC_USER_REFERENCE_ENABLED = true;
+    authSession = {access_token:'admin-token',refresh_token:'refresh-test',expires_at:Date.now()/1000+3600,
+      user:{id:'77777777-7777-7777-7777-777777777777',email:'inactive@example.test'}};
+    window.__FS_OPC_USER_REFERENCE_PROVIDER__ = async function(){
+      return [{'OPC Username':'opc-inactive-1','User Name':'Inactive Admin',
+        'OPC Login Email':'inactive@example.test','Current Role':'admin','User Status':'Inactive'}];
+    };
+    window.__fetchQueue.push(window.__mockResponse(200, [
+      {user_id:'77777777-7777-7777-7777-777777777777',name:'Legacy Admin',role:'admin',active:true}
+    ]));
+    let caught = null;
+    try{ await authFetchMembership(); }catch(err){ caught = err; }
+    assert(caught && /OPC_USER_REFERENCE_MISSING/.test(caught.message), 'inactive OPC user was accepted');
+    equal(authSession, null, 'session remained after OPC identity denial');
+    equal(authOpcUserReference, null, 'denied OPC identity remained in memory');
   });
 
   test('chat event ที่ถูกปฏิเสธถาวร ต้องไม่ทำให้ทั้ง sbPush ค้าง', async function(){
