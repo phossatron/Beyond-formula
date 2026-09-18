@@ -199,7 +199,7 @@
     assert(!friendly.includes('อินเทอร์เน็ต'), 'ยังโทษอินเทอร์เน็ตอยู่');
   });
 
-  test('OPC user reference is disabled by default and preserves the current Admin auth flow', async function(){
+  test('an explicitly disabled OPC reference preserves the current Admin auth flow', async function(){
     reset();
     authSession = {access_token:'admin-token',refresh_token:'refresh-test',expires_at:Date.now()/1000+3600,
       user:{id:'55555555-5555-5555-5555-555555555555',email:'admin@example.test'}};
@@ -238,6 +238,26 @@
     equal(authOpcUserReference.name, 'Admin From OPC', 'OPC display name was not normalized');
     equal(currentUser, 'Legacy Admin', 'legacy Formula display identity was changed');
     equal(currentRole(), 'admin', 'Supabase/Auth role boundary was bypassed');
+  });
+
+  test('enabled OPC reference uses the same-origin server adapter without exposing a report token', async function(){
+    reset();
+    OPC_USER_REFERENCE_ENABLED = true;
+    authSession = {access_token:'admin-token',refresh_token:'refresh-test',expires_at:Date.now()/1000+3600,
+      user:{id:'88888888-8888-8888-8888-888888888888',email:'admin@example.test'}};
+    window.__fetchQueue.push(window.__mockResponse(200, [
+      {user_id:'88888888-8888-8888-8888-888888888888',name:'Legacy Admin',role:'admin',active:true}
+    ]));
+    window.__fetchQueue.push(window.__mockResponse(200, {
+      users:[{source_record_id:'opc-admin-1',display_name:'Admin From OPC',department:'Management',role:'admin',is_active:true,access_email:'admin@example.test'}]
+    }));
+    await authFetchMembership();
+    equal(authOpcUserReference.opc_user_id, 'opc-admin-1', 'same-origin adapter did not map the OPC record');
+    const adapterCall = window.__fetchCalls.find(call => call.url === '/api/opc-user-directory');
+    assert(adapterCall, 'Formula did not call the same-origin OPC adapter');
+    equal(adapterCall.options.headers.Authorization, 'Bearer admin-token', 'Formula did not authenticate the same-origin adapter');
+    assert(!JSON.stringify(adapterCall.options).toLowerCase().includes('report_api_token'), 'Formula exposed the OPC report token');
+    assert(!JSON.stringify(adapterCall.options).toLowerCase().includes('x-report-token'), 'Formula sent the OPC report token from the browser');
   });
 
   test('enabled OPC reference fails closed when the authenticated user is not active in the reference', async function(){
