@@ -18,6 +18,7 @@ FORMULA_AUTH_USER_URL=https://<formula-auth-host>/auth/v1/user
 FORMULA_AUTH_API_KEY=<Formula authentication API key>
 OPC_USER_DIRECTORY_URL=https://<opc-staging-host>/api/integrations/v1/formula/users
 OPC_USER_DIRECTORY_TOKEN=<OPC REPORT_API_TOKEN>
+FORMULA_USER_DIRECTORY_APPROVED_EMAILS=<comma-separated Approved + Active emails from the owner sheet>
 ```
 
 On OPC Staging, enable the existing route with:
@@ -25,6 +26,7 @@ On OPC Staging, enable the existing route with:
 ```text
 FORMULA_USER_DIRECTORY_ENABLED=true
 REPORT_API_TOKEN=<same value used by OPC_USER_DIRECTORY_TOKEN>
+FORMULA_USER_DIRECTORY_APPROVED_EMAILS=<the exact Approved + Active population>
 ```
 
 The Formula release has the OPC reference check enabled and fails closed when
@@ -32,7 +34,8 @@ the adapter, authenticated session, or active OPC reference is unavailable.
 
 ## Verification order
 
-1. Check OPC Staging returns `200` with the machine token and `401` without it.
+1. Check OPC Staging returns `200` with the machine token and `401` without it;
+   the response must contain only the configured approved active population.
 2. Check Formula's same-origin adapter returns `401` without a Formula session.
 3. Sign in with one approved user and confirm the OPC `source_record_id` is
    retained without changing Formula's existing role.
