@@ -282,7 +282,17 @@ input.fi.rec-date{width:auto;min-width:150px;padding:0 12px;height:36px}
 .chat-badge{margin-left:auto;background:var(--card2);color:var(--muted);border-radius:10px;padding:1px 8px;font-size:11px;font-weight:500}
 .side-item.on .chat-badge{background:rgba(11,87,208,.14);color:var(--ontint)}
 .chat-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-select.fi.chat-picker{width:auto;height:36px;padding:0 12px;min-width:300px;max-width:460px;font-family:'Roboto Mono','Noto Sans Thai',monospace;font-size:13px}
+.chat-pick{position:relative;flex:1 1 360px;min-width:260px;max-width:560px}
+.chat-pick input.fi{height:36px;padding:0 12px;font-size:13px}
+.chat-pick-list{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:50;max-height:320px;overflow-y:auto;background:var(--card);border:1px solid var(--bd);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.14)}
+.chat-pick-list[hidden]{display:none}
+.chat-pick-it{display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;font-size:13px;color:var(--tx);border-bottom:1px solid var(--line)}
+.chat-pick-it:last-child{border-bottom:none}
+.chat-pick-it.on,.chat-pick-it:hover{background:var(--tint)}
+.chat-pick-id{font-family:'Roboto Mono',monospace;font-weight:500;color:var(--ontint);flex-shrink:0}
+.chat-pick-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-pick-sale{flex-shrink:0;font-size:12px;color:var(--muted)}
+.chat-pick-empty{padding:10px 12px;font-size:13px;color:var(--muted)}
 .chat-list{display:flex;flex-direction:column;gap:1px;border:1px solid var(--bd);border-radius:8px;overflow:hidden;background:var(--card)}
 .chat-item{background:var(--card);border:none;border-bottom:1px solid var(--line);padding:14px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;transition:.15s;text-align:left;font-family:inherit;color:var(--tx);width:100%}
 .chat-item:last-child{border-bottom:none}
@@ -732,7 +742,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-08-21.5</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-19.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -5683,20 +5693,79 @@ function chatListHTML(){
           <div class="empty-d">กด “New Chat” เพื่อสร้างห้องแชทตามรหัสงาน หรือคลิกรหัสงานในหน้า Dashboard แล้วกด New Chat</div></div>`}`;
 }
 
-// ดรอปดาวน์เลือกห้องแชท — แสดงรหัสงาน + สถานะอนุมัติ PD / RA / RD (✓ หรือ –)
-function chatApproveText(c){
-  return CHAT_PARTS.map(p=>`${p.key.toUpperCase()} ${c.approvals[p.key]?'✓':'–'}`).join('  ');
+// ช่องค้นหารหัสงาน — พิมพ์รหัส / ชื่อลูกค้า / แบรนด์ / Sales แล้วเลือกจากรายการที่ใกล้เคียง
+function chatPickItems(){
+  return visibleChats().map(c=>{
+    const r = records.find(x=>x.id===c.jobId);
+    return { id:c.jobId,
+      name: r ? (r.customer || r.brand || '') : 'ไม่พบชุดข้อมูล',
+      brand: (r && r.brand) || '',
+      sale: shortSalesName(r && r.salesOwner) };
+  });
 }
 function chatPickerHTML(currentId){
-  if(!chats.filter(c=>canSeeRecord(records.find(x=>x.id===c.jobId))).length) return '';
-  const opts = chats.filter(c=>canSeeRecord(records.find(x=>x.id===c.jobId))).map(c=>{
-    const r = records.find(x=>x.id===c.jobId);
-    const name = r ? (r.brand || r.customer || '') : 'ไม่พบชุดข้อมูล';
-    const label = `${c.jobId}${name?' — '+name:''}   ${chatApproveText(c)}`;
-    return `<option value="${esc(c.jobId)}"${c.jobId===currentId?' selected':''}>${esc(label)}</option>`;
-  }).join('');
-  return `<select class="fi chat-picker" onchange="onChatPick(this.value)" title="เลือกรหัสงาน">
-    <option value=""${currentId?'':' selected'}>— เลือกรหัสงาน —</option>${opts}</select>`;
+  if(!visibleChats().length) return '';
+  const cur = currentId ? chatPickItems().find(it=>it.id===currentId) : null;
+  const val = cur ? `${cur.id} — ${cur.name}${cur.sale?' · Sales: '+cur.sale:''}` : '';
+  return `<div class="chat-pick">
+    <input class="fi" id="chatPickInput" type="text" autocomplete="off" spellcheck="false"
+      placeholder="พิมพ์รหัสงาน / ชื่อลูกค้า / ชื่อ Sales เพื่อค้นหา" title="ค้นหารหัสงาน"
+      value="${esc(val)}" onfocus="this.select();chatPickFilter()" oninput="chatPickFilter()"
+      onkeydown="chatPickKey(event)" onblur="setTimeout(chatPickClose,150)">
+    <div class="chat-pick-list" id="chatPickList" hidden></div>
+  </div>`;
+}
+let chatPickHits = [], chatPickIdx = -1;
+function chatPickFilter(){
+  const inp = document.getElementById('chatPickInput'), box = document.getElementById('chatPickList');
+  if(!inp || !box) return;
+  const words = inp.value.toLowerCase().split(/\s+/).filter(Boolean);
+  const items = chatPickItems();
+  // ถ้าค่าในช่องคือห้องที่เปิดอยู่ (ยังไม่ได้พิมพ์ใหม่) ให้แสดงทั้งหมด
+  const showAll = !words.length || (inp.defaultValue && inp.value===inp.defaultValue);
+  chatPickHits = (showAll ? items : items.filter(it=>{
+    const hay = `${it.id} ${it.name} ${it.brand} ${it.sale}`.toLowerCase();
+    return words.every(w=>hay.includes(w));
+  })).sort((a,b)=>{
+    if(showAll) return 0;
+    const q = words[0], ap = a.id.toLowerCase().includes(q), bp = b.id.toLowerCase().includes(q);
+    return ap===bp ? 0 : (ap ? -1 : 1);            // รหัสงานตรงขึ้นก่อน
+  }).slice(0,50);
+  chatPickIdx = chatPickHits.length ? 0 : -1;
+  box.innerHTML = chatPickHits.length
+    ? chatPickHits.map((it,i)=>`<div class="chat-pick-it${i===chatPickIdx?' on':''}" onmousedown="event.preventDefault();chatPickGo('${esc(it.id)}')">
+        <span class="chat-pick-id">${esc(it.id)}</span>
+        <span class="chat-pick-name">${esc(it.name||'-')}${it.brand&&it.brand!==it.name?` <span style="color:var(--muted)">(${esc(it.brand)})</span>`:''}</span>
+        <span class="chat-pick-sale">${it.sale?'Sales: '+esc(it.sale):''}</span>
+      </div>`).join('')
+    : '<div class="chat-pick-empty">ไม่พบรหัสงานที่ตรงกับคำค้น</div>';
+  box.hidden = false;
+}
+function chatPickKey(e){
+  const box = document.getElementById('chatPickList');
+  if(e.key==='ArrowDown' || e.key==='ArrowUp'){
+    e.preventDefault();
+    if(!box || box.hidden){ chatPickFilter(); return; }
+    if(!chatPickHits.length) return;
+    chatPickIdx = (chatPickIdx + (e.key==='ArrowDown'?1:-1) + chatPickHits.length) % chatPickHits.length;
+    box.querySelectorAll('.chat-pick-it').forEach((el,i)=>{
+      el.classList.toggle('on', i===chatPickIdx);
+      if(i===chatPickIdx) el.scrollIntoView({block:'nearest'});
+    });
+  } else if(e.key==='Enter'){
+    e.preventDefault();
+    if(chatPickIdx>=0 && chatPickHits[chatPickIdx]) chatPickGo(chatPickHits[chatPickIdx].id);
+  } else if(e.key==='Escape'){
+    chatPickClose(); e.target.blur();
+  }
+}
+function chatPickClose(){
+  const box = document.getElementById('chatPickList');
+  if(box) box.hidden = true;
+}
+function chatPickGo(id){
+  chatPickClose();
+  onChatPick(id);
 }
 function onChatPick(id){
   if(id) openChatRoom(id);
