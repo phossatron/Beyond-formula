@@ -742,7 +742,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-19.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-20.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -7140,6 +7140,7 @@ function sbOn(){ return !!(typeof SB_URL!=='undefined' && SB_URL && SB_KEY); }
 function sbBase(){ return String(SB_URL||'').replace(/\/+$/,'').replace(/\/rest\/v1$/,''); }
 
 let sbReady = false;        // pull สำเร็จอย่างน้อย 1 ครั้งแล้ว
+let sbCanEdit = false;       // IAM อนุญาต FORMULA_EDIT ให้ผู้ใช้คนนี้หรือไม่
 let sbBusy = false;         // กำลังคุยกับเซิร์ฟเวอร์
 let sbApplying = false;     // กำลังเอาข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง (ห้าม push กลับ)
 let sbErr = '';             // ข้อความ error ล่าสุด
@@ -7174,6 +7175,16 @@ let sbIdPool = [];          // เลขงานที่จองไว้ล�
 let sbPendMsg = [];         // ข้อความที่ยังหาห้องไม่เจอ รอลองใหม่รอบหน้า
 let sbPartial = false;      // รอบดึงข้อมูลล่าสุดได้มาไม่ครบหรือไม่ (ถ้าไม่ครบ ห้ามลบอะไรทั้งสิ้น)
 const SB_LAG_MS = 15000;    // ถอย watermark กลับไป 15 วิ กันข้อความที่บันทึกพร้อมกันหลุด
+async function sbLoadWritePermission(){
+  try{
+    const res = await fetch('/sb/session', {credentials:'same-origin', cache:'no-store'});
+    const data = await res.json().catch(()=>({}));
+    sbCanEdit = res.ok && data.authenticated === true && data.canEdit === true;
+  }catch(e){
+    sbCanEdit = false;
+  }
+  sbChip();
+}
 function sbWMBack(iso){
   if(!iso) return '';
   const t = Date.parse(iso);
@@ -7287,16 +7298,21 @@ function sbChip(){
   let cls = 'sync-chip on', txt;
   if(sbErr){ cls += ' err'; txt = 'ซิงก์ไม่สำเร็จ — กดเพื่อลองใหม่'; }
   else if(sbBusy){ cls += ' busy'; txt = 'กำลังซิงก์…'; }
+  else if(sbReady && !sbCanEdit){ cls += ' ok'; txt = 'ซิงก์แล้ว · อ่านอย่างเดียว'; }
   else if(sbReady){ cls += ' ok'; txt = 'ซิงก์แล้ว' + (sbLastPush ? ' · ' + new Date(sbLastPush).toLocaleTimeString('th-TH') : ''); }
   else { txt = 'กำลังเชื่อมต่อ…'; }
   el.className = cls;
   el.textContent = txt;
-  el.title = sbErr ? ('ข้อผิดพลาด: ' + sbErr + '\nกดเพื่อลองซิงก์ใหม่') : 'ข้อมูลซิงก์กับเซิร์ฟเวอร์กลาง — กดเพื่อซิงก์ทันที';
+  el.title = sbErr
+    ? ('ข้อผิดพลาด: ' + sbErr + '\nกดเพื่อลองซิงก์ใหม่')
+    : (!sbCanEdit && sbReady
+      ? 'บัญชีนี้อ่านข้อมูล Formula ได้ แต่ยังไม่มีสิทธิ์แก้ไขแบบรายบุคคล — ไม่มีการส่งข้อมูลขึ้นเซิร์ฟเวอร์'
+      : 'ข้อมูลซิงก์กับเซิร์ฟเวอร์กลาง — กดเพื่อซิงก์ทันที');
 }
 
 // ---------- เลขงานจากเซิร์ฟเวอร์ ----------
 async function sbFillIdPool(want){
-  if(!sbOn() || !sbCap.seq) return;
+  if(!sbOn() || !sbCanEdit || !sbCap.seq) return;
   const n = want || 2;
   while(sbIdPool.length < n){
     const r = await sbTry('seq', ()=>sbReq('rpc/fs_next_rec_seq', {method:'POST', body:{}}), null);
@@ -7787,7 +7803,7 @@ async function mergeServerChats(chtUp){
 
 // เรียกจากทุกจุดที่แอปบันทึกข้อมูล — รวบหลาย ๆ การบันทึกที่ติดกันเป็นครั้งเดียว
 function sbQueue(){
-  if(!sbOn() || !sbReady || sbApplying) return;
+  if(!sbOn() || !sbCanEdit || !sbReady || sbApplying) return;
   sbTouchBusy();
   clearTimeout(sbPushTimer);
   sbPushTimer = setTimeout(()=>sbCycle(true), SB_SEND_MS);
@@ -7805,7 +7821,7 @@ async function sbCycle(urgent){
     // ยังไม่เคยดึงข้อมูลลงมาสำเร็จสักครั้ง (เช่น ตอนเปิดหน้าเว็บเน็ตหลุด) → ห้ามส่งขึ้นเด็ดขาด
     // ตอนนั้น sbSnap ยังว่าง ทุกงานจะดูเหมือน "ของใหม่" แล้วสำเนาเก่าใน localStorage
     // จะถูกดันขึ้นไปทับของจริงบนเซิร์ฟเวอร์ทั้งชุด — เคสจริงที่เคยเกิดมาแล้วสองครั้ง
-    const pushed = sbReady ? await sbPush() : false;
+    const pushed = sbReady && sbCanEdit ? await sbPush() : false;
     // เลือก "ใช้ของจากเซิร์ฟเวอร์" ต้องดึงทั้งหมด ไม่งั้นรอบ delta จะไม่มีอะไรกลับมาทับของในเครื่อง
     // และถ้ายังไม่เคยดึงสำเร็จ ต้องดึงทั้งหมดเสมอ เพื่อให้ได้ฐานเทียบครบก่อนส่งขึ้นรอบหน้า
     const full = !sbReady || sbGuardTake || (Date.now() - sbLastFull) >= SB_FULL_MS;
@@ -7846,8 +7862,9 @@ async function sbBoot(){
   if(!sbOn()) return;
   sbChip();
   try{
+    await sbLoadWritePermission();
     const d = await sbPull(true);
-    if(d.empty && (records.length || chats.length || userList.length)){
+    if(d.empty && sbCanEdit && (records.length || chats.length || userList.length)){
       // เซิร์ฟเวอร์ยังว่าง แต่เครื่องนี้มีข้อมูลอยู่ → ยกข้อมูลชุดแรกขึ้นไปตั้งต้น
       sbReady = true;
       await sbPush(true);      // seed: ยืนยันแล้วว่าเซิร์ฟเวอร์ว่างจริง จึงยกของในเครื่องขึ้นได้
