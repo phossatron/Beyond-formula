@@ -742,7 +742,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-21.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-21.3</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -4457,6 +4457,34 @@ function nextRecordId(){
   saveRecordsStore();   // จำลำดับล่าสุดทันที รหัสนี้จะไม่ถูกใช้ซ้ำอีก
   return id;
 }
+// ---------- คัดลอกงานเป็นรหัสใหม่ ----------
+// ใช้ตอนรหัสงานชนกัน (สองเครื่องแจกเลขเดียวกันตอนซิงก์ไม่ทำงาน) หรืออยากแตกงานใหม่จากใบเดิม
+// คัดลอกทุกฟิลด์รวมสูตร แล้วขอรหัสใหม่จากเซิร์ฟเวอร์ ไม่แตะใบเดิมแม้แต่ฟิลด์เดียว
+function copyRecordToNewId(id){
+  if(!requirePerm('createData','คัดลอกงานได้เฉพาะ Role: Admin, Sales, Oversea, OPC')) return;
+  const src = records.find(r=>r.id===id);
+  if(!src){ alert('ไม่พบงาน ' + id); return; }
+  const who = src.customer || src.brand || '';
+  if(!confirm('คัดลอก ' + id + (who ? ' (' + who + ')' : '') + ' เป็นงานใหม่?\n\n'
+    + 'งานใหม่จะได้รหัสใหม่จากเซิร์ฟเวอร์ พร้อมข้อมูลและสูตรครบเหมือนใบเดิม\n'
+    + 'ใบเดิมยังอยู่เหมือนเดิม ไม่ถูกแก้ ไม่ถูกลบ')) return;
+
+  const now = new Date();
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = nextRecordId();
+  copy.copiedFrom = { id: src.id, at: now.getTime(), by: currentUser || '' };   // ฟิลด์ใหม่ ไม่กระทบของเดิม
+  copy.updatedAt = now.getTime();
+  copy.updatedBy = currentUser || '';
+  delete copy.closed;      // งานใหม่ต้องเปิดอยู่เสมอ ไม่สืบทอดสถานะปิด/Reject ของใบเดิม
+  delete copy.rejected;
+  saveRecord(copy);
+  recTouched[copy.id] = 1;               // ของที่สร้างในเครื่องนี้ ต้องส่งขึ้นเซิร์ฟเวอร์ได้
+  logAct('job', 'คัดลอกงานเป็นรหัสใหม่', src.id + ' → ' + copy.id + (who ? ' · ' + who : ''), copy.id);
+  if(typeof sbQueue === 'function') sbQueue();
+  renderRecordsList();
+  alert('คัดลอกเรียบร้อย\n\n' + src.id + '  →  ' + copy.id + '\n\nเปิดงานใหม่แล้วแก้ไขได้ตามปกติ ทุกการแก้ไขถูกบันทึกใน Activities log');
+  openRecordPopup(copy.id);
+}
 function saveRecord(d){
   records.unshift(d);        // ใหม่สุดอยู่บน
   saveRecordsStore();
@@ -4602,6 +4630,7 @@ function renderRecordsList(){
       <td style="white-space:nowrap">
         <button class="btn btn-s btn-sm" onclick="openRecordPopup('${r.id}')">รายละเอียด</button>
         <button class="btn btn-g btn-sm" onclick="printRecord('${r.id}')">พิมพ์</button>
+        ${can('createData') ? `<button class="btn btn-g btn-sm" onclick="copyRecordToNewId('${r.id}')" title="คัดลอกงานใบนี้เป็นรหัสใหม่จากเซิร์ฟเวอร์">คัดลอก</button>` : ''}
         ${jobDelBtnHTML(r)}
       </td>
     </tr>`).join('')
