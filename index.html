@@ -742,7 +742,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-20.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-21.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -7140,7 +7140,8 @@ function sbOn(){ return !!(typeof SB_URL!=='undefined' && SB_URL && SB_KEY); }
 function sbBase(){ return String(SB_URL||'').replace(/\/+$/,'').replace(/\/rest\/v1$/,''); }
 
 let sbReady = false;        // pull สำเร็จอย่างน้อย 1 ครั้งแล้ว
-let sbCanEdit = false;       // IAM อนุญาต FORMULA_EDIT ให้ผู้ใช้คนนี้หรือไม่
+let sbCanEdit = true;        // IAM อนุญาต FORMULA_EDIT ให้ผู้ใช้คนนี้หรือไม่
+let sbIamSeen = false;       // เคยได้คำตอบจากด่าน IAM จริง ๆ แล้วหรือยัง (ดีพลอยที่ไม่มีด่าน จะไม่มีวันเป็น true)
 let sbBusy = false;         // กำลังคุยกับเซิร์ฟเวอร์
 let sbApplying = false;     // กำลังเอาข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง (ห้าม push กลับ)
 let sbErr = '';             // ข้อความ error ล่าสุด
@@ -7175,13 +7176,32 @@ let sbIdPool = [];          // เลขงานที่จองไว้ล�
 let sbPendMsg = [];         // ข้อความที่ยังหาห้องไม่เจอ รอลองใหม่รอบหน้า
 let sbPartial = false;      // รอบดึงข้อมูลล่าสุดได้มาไม่ครบหรือไม่ (ถ้าไม่ครบ ห้ามลบอะไรทั้งสิ้น)
 const SB_LAG_MS = 15000;    // ถอย watermark กลับไป 15 วิ กันข้อความที่บันทึกพร้อมกันหลุด
+// ถาม /sb/session ว่าผู้ใช้คนนี้มีสิทธิ์เขียนไหม
+// ด่านนี้เป็น "ชั้นที่สอง" ของดีพลอยที่มี IAM เท่านั้น — สิทธิ์จริงของแอปยังคุมด้วย can() / requirePerm() เหมือนเดิม
+// กติกา: ปิดประตูเฉพาะตอนที่ด่าน IAM ตอบมาจริง ๆ ว่า "ไม่ให้เขียน" เท่านั้น
+//   ไม่มีด่านในดีพลอยนี้ (404 / ไม่ใช่ JSON / ไม่มีฟิลด์ canEdit) = ไม่มีใครมาห้าม ให้ทำงานตามปกติ
+//   เรียกด่านไม่ได้ชั่วคราว = คงคำตอบครั้งล่าสุดไว้ ไม่ใช่แปลว่าถูกปฏิเสธ
+// เคยพังมาแล้ว: ดีพลอยจริงไม่มี /sb/session ทุกคนจึงกลายเป็นอ่านอย่างเดียวเงียบ ๆ
+// ไม่มีอะไรถูกบันทึกขึ้นเซิร์ฟเวอร์เลย และเลขงานก็ไม่ถูกจองจากเซิร์ฟเวอร์ (เสี่ยงรหัสงานซ้ำ)
 async function sbLoadWritePermission(){
+  const noGate = ()=>{ if(!sbIamSeen) sbCanEdit = true; };   // ไม่เคยเจอด่าน = ไม่มีด่าน
   try{
-    const res = await fetch('/sb/session', {credentials:'same-origin', cache:'no-store'});
-    const data = await res.json().catch(()=>({}));
-    sbCanEdit = res.ok && data.authenticated === true && data.canEdit === true;
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    // ด่านที่ค้างต้องไม่ถ่วงการเปิดแอป — sbBoot() รอฟังก์ชันนี้อยู่
+    const tm = setTimeout(()=>{ try{ ctl && ctl.abort(); }catch(e){} }, 3000);
+    let res;
+    try{
+      res = await fetch('/sb/session', {credentials:'same-origin', cache:'no-store', signal: ctl && ctl.signal});
+    } finally { clearTimeout(tm); }
+    if(res.status === 404 || res.status === 501){ noGate(); sbChip(); return; }   // ดีพลอยนี้ไม่มีด่าน IAM
+    const ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || '');
+    if(!res.ok || ct.indexOf('json') < 0){ noGate(); sbChip(); return; }
+    const data = await res.json().catch(()=>null);
+    if(!data || typeof data.canEdit === 'undefined'){ noGate(); sbChip(); return; }
+    sbIamSeen = true;                                        // ด่านนี้มีจริง ตั้งแต่นี้ไปเชื่อคำตอบของมัน
+    sbCanEdit = data.authenticated === true && data.canEdit === true;
   }catch(e){
-    sbCanEdit = false;
+    noGate();          // เรียกไม่ได้ ≠ ถูกปฏิเสธ · ถ้าเคยเจอด่านแล้ว ให้คงคำตอบเดิมไว้
   }
   sbChip();
 }
