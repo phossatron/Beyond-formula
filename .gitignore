@@ -5,3 +5,6 @@ index.bak*.html
 test.html
 err.html
 node_modules/
+runtime/logs/
+runtime/site/
+.runtime/

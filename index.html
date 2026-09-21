@@ -2,6 +2,16 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
+<!--
+  Content-Security-Policy — ชั้นจำกัดปลายทางของ private-workspace bundle
+  bundle ถูก import() เข้ามาทำงานใน origin เดียวกับ Formula จึงอ่าน
+  sessionStorage.fs_auth_session ได้ CSP นี้ไม่ได้กันการ "อ่าน" แต่จำกัด "ปลายทาง
+  ที่ส่งออกได้" ให้เหลือเฉพาะที่ประกาศไว้เท่านั้น (ดู docs/PRIVATE_WORKSPACE_CSP.md)
+  ถ้าตั้ง SCIENCE_WORKSPACE_API_ORIGIN เป็น origin ใหม่ ต้องเพิ่ม origin นั้นลงใน
+  connect-src ด้านล่างด้วย มิฉะนั้น loader จะปฏิเสธการ mount แบบ fail-closed
+  (ดู pwsCspAllowsConnect) แทนที่จะพังเงียบ ๆ ตอนยิง request
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://uumkwaliebucxebkkllm.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Beyond Lab — Formula Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -785,11 +795,11 @@ tr.fx-row-dirty td{background:#FFF8E1}
     <div class="modal-hd">
       <div>
         <div class="modal-t">จัดการผู้ใช้</div>
-        <div class="modal-desc">คลิกชื่อของคุณเพื่อเข้าใช้งาน · ผู้ใช้ที่สร้างใหม่จะได้รหัสผ่านตั้งต้น 123456</div>
+        <div class="modal-desc" id="userModalDesc">คลิกชื่อของคุณเพื่อเข้าใช้งาน · ผู้ใช้ที่สร้างใหม่จะได้รหัสผ่านตั้งต้น 123456</div>
       </div>
       <button class="modal-x" onclick="closeUserModal()" title="ปิด">×</button>
     </div>
-    <div style="display:flex;gap:8px;margin:14px 0 6px;flex-wrap:wrap">
+    <div id="userCreateControls" style="display:flex;gap:8px;margin:14px 0 6px;flex-wrap:wrap">
       <input class="fi" id="userInput" style="flex:1;min-width:120px" placeholder="ชื่อผู้ใช้ / Username" onkeydown="if(event.key==='Enter')createUser()">
       <input class="fi" id="userEmail" style="flex:1.4;min-width:160px" placeholder="User ID / อีเมล" onkeydown="if(event.key==='Enter')createUser()">
       <select class="fi role-select" id="newUserRole" title="Role ของผู้ใช้ใหม่">
@@ -1256,6 +1266,31 @@ const SB_SLEEP_MS  = 30000;   // เงียบเกิน 5 นาที
 const SB_BUSY_MS   = 60000;   // นับว่ายัง "กำลังใช้งาน" ถ้ามีความเคลื่อนไหวภายในกี่มิลลิวินาที
 const SB_QUIET_MS  = 300000;  // เงียบเกินเท่านี้ = ถ่างเป็นรอบยาวสุด
 const SB_SEND_MS = 150;    // หน่วงก่อนส่งขึ้นเซิร์ฟเวอร์ (รวบการบันทึกที่ติดกันเป็นครั้งเดียว)
+
+// ===================================================================
+//  Private workspace (ของเสริม) — เว้นว่างไว้ = ปิดสนิท
+//
+//  แอปนี้ไม่รู้ว่า workspace ที่จะโหลดมาคืออะไร ชื่ออะไร หรือมีหน้าตาแบบไหน
+//  มันแค่ถามเซิร์ฟเวอร์ที่ตั้งค่าไว้ว่า "ผู้ใช้คนนี้มี workspace ส่วนตัวไหม"
+//  แล้วรับชื่อแท็บกับที่อยู่ของ bundle มาจากคำตอบ · ทุกอย่างสร้างตอน runtime
+//
+//  จงใจไม่ฝังชื่อหรือเนื้อหาของ workspace ไว้ในไฟล์นี้ คนที่เปิด view-source
+//  โดยไม่มีสิทธิ์จึงไม่เห็นแม้แต่ร่องรอยว่ามีอะไรอยู่
+//
+//  ค่าเริ่มต้นเป็นค่าว่างเสมอ ไม่ใช่ URL ของ production — ไม่ตั้งค่า = ไม่ยิงอะไรเลย
+// ===================================================================
+let SCIENCE_WORKSPACE_API_ORIGIN = '';
+
+// OPC Workflow user reference — enabled for the cross-system identity rollout.
+// The reference shape follows the read-only OPC directory contract, but no real
+// names/emails/IDs are embedded here. An approved adapter provides rows through
+// the same-origin Formula API; tests may inject a provider explicitly.
+// Supabase Auth/RLS remains the security boundary; this reference is not an
+// authorization bypass and is never persisted to localStorage or Supabase.
+// ปิดเป็นค่าเริ่มต้นจนกว่าจะติดตั้ง adapter ที่ผ่านการอนุมัติใน runtime
+// (การเปิดโดยไม่มี adapter จะทำให้ Auth login fail-closed ทุกบัญชี)
+let OPC_USER_REFERENCE_ENABLED = false;
+const OPC_USER_REFERENCE_SOURCE = 'opc-workflow';
 
 // ========== THAI FDA DATABASE ==========
 // อ้างอิง: ประกาศกระทรวงสาธารณสุข ฉบับที่ 448 พ.ศ. 2566 (มีผล 4 ม.ค. 2567)
@@ -2322,6 +2357,22 @@ function fmtUW(d){ return d.uw ? [d.uw, d.uwUnit || 'mg'].filter(Boolean).join('
 // ========== NAVIGATION ==========
 function switchView(v) {
   const viewIds = {input:'inputView', dash:'dashView', modify:'modifyView', chat:'chatView', act:'actView'};
+  // panel ที่ loader สร้างตอน runtime ไม่ได้อยู่ในตารางข้างบน · ถ้าไม่ดักไว้ตรงนี้
+  // การกดปุ่มของมันจะตกไปที่ค่าเริ่มต้น inputView แล้วเปิดหน้าผิด
+  if(v === 'pws'){
+    const panel = document.getElementById('pwsPanel');
+    if(!panel){ v = 'dash'; }
+    else {
+      document.querySelectorAll('.view').forEach(el=>el.classList.remove('on'));
+      panel.classList.add('on');
+      ['sideData','sideDash','sideChat','sideActivities'].forEach(id=>{
+        const el = document.getElementById(id); if(el) el.classList.remove('on');
+      });
+      const btn = document.getElementById('pwsNav');
+      if(btn) btn.classList.add('on');
+      return;
+    }
+  }
   if(v==='act' && !can('manageUsers')){ alert('Activities log เปิดดูได้เฉพาะ Role: Admin'); return; }
   if(v==='input' && currentUser && !can('createData')){
     alert('เมนู Customer Data ใช้ได้เฉพาะ Role: Admin, Sales, Oversea, OPC, MKT\nRole ของคุณ: ' + (roleLabel(currentRole())||'ไม่ระบุ'));
@@ -2337,7 +2388,11 @@ function switchView(v) {
   if(v==='modify') renderModify();
   if(v==='dash') renderRecordsList();
   if(v==='chat') renderChat();
-  if(v==='act'){ actEnsureDay(); renderActivities(); }
+  if(v==='act') renderActivities();
+  // ปุ่มของ workspace ต้องเลิกไฮไลต์เมื่อผู้ใช้ไปหน้าอื่น
+  const pwsBtn = document.getElementById('pwsNav');
+  if(pwsBtn) pwsBtn.classList.remove('on');
+  if(v==='act') actEnsureDay();
   if(v==='chat'){ const g=document.getElementById('chatGroup'); if(g) g.classList.add('open'); }
   if(v!=='input') { document.querySelectorAll('.side-link:not(.chat-job)').forEach(el=>el.classList.remove('on')); window.scrollTo({top:0,behavior:'auto'}); }
 }
@@ -2383,11 +2438,18 @@ function addTag(e, containerId, inputId) {
   const val = inp.value.trim();
   if(!val) return;
   const container = document.getElementById(containerId);
+  appendTag(container, inp, val);
+  inp.value='';
+}
+function appendTag(container, inp, val){
   const tag = document.createElement('span');
   tag.className='tag';
-  tag.innerHTML=`${val}<button class="tag-x" onclick="this.parentElement.remove()">×</button>`;
+  tag.appendChild(document.createTextNode(String(val)));
+  const remove=document.createElement('button');
+  remove.className='tag-x'; remove.type='button'; remove.textContent='×';
+  remove.onclick=function(){ tag.remove(); };
+  tag.appendChild(remove);
   container.insertBefore(tag, inp);
-  inp.value='';
 }
 function getTagValues(containerId) {
   return Array.from(document.querySelectorAll(`#${containerId} .tag`)).map(t=>t.textContent.trim().replace('×','').trim());
@@ -2402,13 +2464,13 @@ function addRow(data={}) {
   tr.innerHTML=`
     <td style="color:var(--muted);font-size:11px;text-align:center">${document.querySelectorAll('#ingBody tr').length+1}</td>
     <td style="text-align:center"><span class="hero-star${data.hero?' on':''}" onclick="toggleHero(this)" title="Hero Ingredient">⭐</span></td>
-    <td><input list="ing_list" value="${data.name||''}" placeholder="ชื่อสาร..." oninput="onIngChange(this,${id})" style="min-width:180px"></td>
-    <td><input type="number" value="${data.w||''}" placeholder="0" oninput="calcRow(${id})" style="min-width:100px"></td>
-    <td><input value="${data.o||''}" placeholder="Origin..." style="min-width:140px"></td>
-    <td><input type="number" value="${data.p||''}" placeholder="100" step="0.01" oninput="calcRow(${id})" style="min-width:90px"></td>
+    <td><input list="ing_list" value="${esc(data.name||'')}" placeholder="ชื่อสาร..." oninput="onIngChange(this,${id})" style="min-width:180px"></td>
+    <td><input type="number" value="${esc(data.w||'')}" placeholder="0" oninput="calcRow(${id})" style="min-width:100px"></td>
+    <td><input value="${esc(data.o||'')}" placeholder="Origin..." style="min-width:140px"></td>
+    <td><input type="number" value="${esc(data.p||'')}" placeholder="100" step="0.01" oninput="calcRow(${id})" style="min-width:90px"></td>
     <td class="calc" id="actual_${id}">—</td>
     <td class="fda-cell" id="fda_${id}"><span class="fda-unknown">⚪</span><div class="fda-tip">ยังไม่มีข้อมูล</div></td>
-    <td><input value="${data.note||''}" placeholder="หมายเหตุ..." style="min-width:120px"></td>
+    <td><input value="${esc(data.note||'')}" placeholder="หมายเหตุ..." style="min-width:120px"></td>
     <td><button class="btn-del" onclick="delRow(${id})">🗑</button></td>
   `;
   document.getElementById('ingBody').appendChild(tr);
@@ -2432,7 +2494,7 @@ function onIngChange(inp, id) {
   if(fdaCell && name.trim()) {
     const result = checkFDA(name.trim(), 0);
     if(result.status === 'not_approved') {
-      fdaCell.innerHTML = `<span class="${result.cls}">${result.icon}</span><div class="fda-tip">${result.tip.replace(/\n/g,'<br>')}</div>`;
+      fdaCell.innerHTML = `<span class="${esc(result.cls)}">${esc(result.icon)}</span><div class="fda-tip">${esc(result.tip).replace(/\n/g,'<br>')}</div>`;
     }
   }
 }
@@ -2451,7 +2513,7 @@ function calcRow(id) {
   const fdaCell = document.getElementById(`fda_${id}`);
   if(fdaCell && nameInput && nameInput.value.trim()) {
     const result = checkFDA(nameInput.value.trim(), actual);
-    fdaCell.innerHTML = `<span class="${result.cls}" title="">${result.icon}</span><div class="fda-tip">${result.tip.replace(/\n/g,'<br>')}</div>`;
+    fdaCell.innerHTML = `<span class="${esc(result.cls)}" title="">${esc(result.icon)}</span><div class="fda-tip">${esc(result.tip).replace(/\n/g,'<br>')}</div>`;
   }
   updateTotals();
 }
@@ -2669,11 +2731,11 @@ function renderDashboard(d){
   document.getElementById('d_title').textContent = brand ? `${brand}` : customer;
   document.getElementById('d_sub').textContent = customer ? `ลูกค้า: ${customer}` : '';
   document.getElementById('d_meta').innerHTML = [
-    `<span><b>รหัส:</b> <span class="job-id${oseaCls(d)}">${d.id}</span></span>`,
-    form ? `<span><b>รูปแบบ:</b> ${form}</span>` : '',
-    size ? `<span><b>บรรจุ:</b> ${fmtSize(d)}</span>` : '',
-    uw ? `<span><b>น้ำหนัก/หน่วย:</b> ${fmtUW(d)}</span>` : '',
-    `<span><b>สร้างวันที่:</b> ${d.metaDate}</span>`,
+    `<span><b>รหัส:</b> <span class="job-id${oseaCls(d)}">${esc(d.id)}</span></span>`,
+    form ? `<span><b>รูปแบบ:</b> ${esc(form)}</span>` : '',
+    size ? `<span><b>บรรจุ:</b> ${esc(fmtSize(d))}</span>` : '',
+    uw ? `<span><b>น้ำหนัก/หน่วย:</b> ${esc(fmtUW(d))}</span>` : '',
+    `<span><b>สร้างวันที่:</b> ${esc(d.metaDate)}</span>`,
     d.createdBy ? `<span><b>โดย:</b> ${esc(d.createdBy)}</span>` : '',
   ].filter(Boolean).join('');
 
@@ -2689,16 +2751,16 @@ function renderDashboard(d){
   rows.forEach(r=>{
     const tr = document.createElement('tr');
     if(r.hero) tr.className='hero-row';
-    const fdaStatusHTML = `<div class="fda-cell" style="text-align:center"><span class="${r.fda.cls}">${r.fda.icon}</span><div class="fda-tip">${r.fda.tip.replace(/\n/g,'<br>')}</div></div>`;
+    const fdaStatusHTML = `<div class="fda-cell" style="text-align:center"><span class="${esc(r.fda.cls)}">${esc(r.fda.icon)}</span><div class="fda-tip">${esc(r.fda.tip).replace(/\n/g,'<br>')}</div></div>`;
     tr.innerHTML=`
       <td style="color:var(--muted);text-align:center">${r.num}</td>
-      <td><b>${r.name}</b>${r.hero?'<span class="hero-badge">HERO</span>':''}</td>
+      <td><b>${esc(r.name)}</b>${r.hero?'<span class="hero-badge">HERO</span>':''}</td>
       <td>${r.w.toFixed(2)} mg</td>
-      <td>${r.o}</td>
+      <td>${esc(r.o)}</td>
       <td>${r.p}%</td>
       <td class="actual">${r.actual.toFixed(2)} mg</td>
       <td>${fdaStatusHTML}</td>
-      <td style="color:var(--muted);font-size:12px">${r.note}</td>
+      <td style="color:var(--muted);font-size:12px">${esc(r.note)}</td>
     `;
     fb.appendChild(tr);
     totW+=r.w; totA+=r.actual;
@@ -2711,21 +2773,21 @@ function renderDashboard(d){
 
   // Benefits
   document.getElementById('d_benefits').innerHTML = allBenefits.slice(0,6).map(b=>`
-    <div class="bitem"><span>✅</span><span>${b}</span></div>
+    <div class="bitem"><span>✅</span><span>${esc(b)}</span></div>
   `).join('');
 
   // Heroes
   const heroList = heroes.length>0 ? heroes : rows.slice(0,3);
   document.getElementById('d_heroes').innerHTML = heroList.map(r=>`
     <div class="chip">
-      <div class="chip-n">${r.name}</div>
+      <div class="chip-n">${esc(r.name)}</div>
       <div class="chip-v">${r.actual.toFixed(2)} mg actual</div>
     </div>
   `).join('') || '<span style="color:var(--muted);font-size:13px">ไม่ได้ระบุ Hero Ingredient</span>';
 
   // Selling points
   document.getElementById('d_selling').innerHTML = allSP.slice(0,6).map(s=>`
-    <div class="sp"><span style="font-size:16px">${s.split(' ')[0]}</span><span>${s.substring(s.indexOf(' ')+1)}</span></div>
+    <div class="sp"><span style="font-size:16px">${esc(s.split(' ')[0])}</span><span>${esc(s.substring(s.indexOf(' ')+1))}</span></div>
   `).join('');
 
   // Target
@@ -2736,12 +2798,12 @@ function renderDashboard(d){
     form ? {lbl:'รูปแบบ', val: form} : null,
   ].filter(Boolean);
   document.getElementById('d_target').innerHTML = tgtParts.map(p=>`
-    <div class="tgt-c"><div class="tgt-lbl">${p.lbl}</div><div class="tgt-val">${p.val}</div></div>
+    <div class="tgt-c"><div class="tgt-lbl">${esc(p.lbl)}</div><div class="tgt-val">${esc(p.val)}</div></div>
   `).join('');
 
   // Constraints
   const allCons = cons.length>0 ? cons : (conceptStr.includes('ลดน้ำหนัก')?['ไม่มีน้ำตาล']:['ไม่มีข้อจำกัดพิเศษ']);
-  document.getElementById('d_cons').innerHTML = allCons.map(c=>`<span class="con-tag">${c}</span>`).join('');
+  document.getElementById('d_cons').innerHTML = allCons.map(c=>`<span class="con-tag">${esc(c)}</span>`).join('');
 
   // Notes
   const nw = document.getElementById('d_notes_wrap');
@@ -2767,9 +2829,9 @@ function renderDashboard(d){
       ${notApproved.map(r=>`<div class="fda-row">
         <div class="fda-row-icon">🔴</div>
         <div class="fda-row-body">
-          <div class="fda-row-name">${r.name} (${r.actual.toFixed(2)} mg actual)</div>
-          <div class="fda-row-detail">${r.fda.tip.split('\n')[1]||''}</div>
-          <div class="fda-row-limit" style="color:#F85149">⚠️ ${r.fda.tip.split('\n')[2]||''}</div>
+          <div class="fda-row-name">${esc(r.name)} (${r.actual.toFixed(2)} mg actual)</div>
+          <div class="fda-row-detail">${esc(r.fda.tip.split('\n')[1]||'')}</div>
+          <div class="fda-row-limit" style="color:#F85149">⚠️ ${esc(r.fda.tip.split('\n')[2]||'')}</div>
         </div>
       </div>`).join('')}
     </div>`;
@@ -2784,10 +2846,10 @@ function renderDashboard(d){
         return `<div class="fda-row">
           <div class="fda-row-icon">🟡</div>
           <div class="fda-row-body">
-            <div class="fda-row-name">${r.name}</div>
-            <div class="fda-row-detail">${lines[1]||''}</div>
-            <div class="fda-row-limit" style="color:#D29922">${lines[2]||''}</div>
-            <div class="fda-row-detail" style="margin-top:3px;color:#F85149">${lines[3]||''}</div>
+            <div class="fda-row-name">${esc(r.name)}</div>
+            <div class="fda-row-detail">${esc(lines[1]||'')}</div>
+            <div class="fda-row-limit" style="color:#D29922">${esc(lines[2]||'')}</div>
+            <div class="fda-row-detail" style="margin-top:3px;color:#F85149">${esc(lines[3]||'')}</div>
           </div>
         </div>`;
       }).join('')}
@@ -2801,7 +2863,7 @@ function renderDashboard(d){
       ${unknown.map(r=>`<div class="fda-row">
         <div class="fda-row-icon">⚪</div>
         <div class="fda-row-body">
-          <div class="fda-row-name">${r.name} (${r.actual.toFixed(2)} mg actual)</div>
+          <div class="fda-row-name">${esc(r.name)} (${r.actual.toFixed(2)} mg actual)</div>
           <div class="fda-row-detail">ไม่พบในฐานข้อมูล อย. — กรุณาตรวจสอบกับ อย. ก่อนขึ้นทะเบียนผลิตภัณฑ์</div>
         </div>
       </div>`).join('')}
@@ -2888,7 +2950,10 @@ const SALES_ROLES = ['sales','oversea','mkt'];
 function isSalesRole(role){ return SALES_ROLES.indexOf(role) >= 0; }
 
 function findUser(name){ return userList.find(u=>u.name===name) || null; }
-function currentRole(){ const u = findUser(currentUser); return u ? u.role : ''; }
+function currentRole(){
+  if(sbOn() && authMembership && currentUser===authMembership.name) return authMembership.role;
+  const u = findUser(currentUser); return u ? u.role : '';
+}
 function roleLabel(role){ return ROLES[role] ? ROLES[role].label : '—'; }
 function can(cap){
   const r = ROLES[currentRole()];
@@ -3019,6 +3084,7 @@ function filterImpList(q){
   if(el) el.innerHTML = impListHTML(q);
 }
 function openImpersonate(){
+  if(sbOn()){ alert('โหมด Supabase Auth ไม่อนุญาตให้สวมบทบาทใน browser'); return; }
   const realRole = impersonator ? (findUser(impersonator)||{}).role : currentRole();
   if(realRole !== 'admin'){ alert('สวมบทบาทผู้ใช้ได้เฉพาะ Role: Admin'); return; }
   if(impersonator){ alert('กำลังสวมบทบาทอยู่ — กด "ออกจากการสวมบทบาท" ที่แถบด้านซ้ายก่อน'); return; }
@@ -3039,6 +3105,7 @@ function openImpersonate(){
     </div>`);
 }
 function startImpersonate(i){
+  if(sbOn()){ alert('โหมด Supabase Auth ไม่อนุญาตให้สวมบทบาทใน browser'); return; }
   const target = userList[i];
   if(!target) return;
   const real = impersonator || currentUser;
@@ -3186,22 +3253,29 @@ function renderActivities(){
 
 function loadUsers(){
   try{
-    currentUser = localStorage.getItem('fs_user') || '';
-    impersonator = localStorage.getItem('fs_imp') || '';
+    // Server mode trusts Supabase Auth only. Legacy browser identity is never authority.
+    currentUser = sbOn() ? '' : (localStorage.getItem('fs_user') || '');
+    impersonator = sbOn() ? '' : (localStorage.getItem('fs_imp') || '');
     const raw = JSON.parse(localStorage.getItem('fs_userlist') || '[]');
     // รองรับข้อมูลเดิมที่เก็บเป็นรายชื่อ (string) — ยกให้เป็น Admin เพื่อไม่ให้ใช้งานต่อไม่ได้
     userList = raw.map(u => typeof u === 'string'
       ? {name:u, role:'admin'}
-      : {name:u.name, role: ROLES[u.role] ? u.role : 'admin', email:u.email||'', pass:u.pass});
+      : {name:u.name, role: ROLES[u.role] ? u.role : 'admin', email:u.email||'', pass:sbOn()?null:u.pass});
   }catch(e){ currentUser=''; userList=[]; }
   migrateUserNames();
   renderUserUI();
 }
 function saveUsers(){
   try{
-    localStorage.setItem('fs_user', currentUser);
-    localStorage.setItem('fs_imp', impersonator);
-    localStorage.setItem('fs_userlist', JSON.stringify(userList));
+    if(sbOn()){
+      localStorage.removeItem('fs_user');
+      localStorage.removeItem('fs_imp');
+      localStorage.setItem('fs_userlist', JSON.stringify(userList.map(u=>Object.assign({},u,{pass:null}))));
+    } else {
+      localStorage.setItem('fs_user', currentUser);
+      localStorage.setItem('fs_imp', impersonator);
+      localStorage.setItem('fs_userlist', JSON.stringify(userList));
+    }
   }catch(e){}
   // currentUser / impersonator เป็นสถานะของเครื่องนี้เท่านั้น ไม่ส่งขึ้นเซิร์ฟเวอร์
   sbQueue();
@@ -3480,8 +3554,8 @@ let _lgMode = null;   // 'login' | 'first' | 'wait' — จำไว้เพื
 function loginFormHTML(){
   return `
     <div class="fgrp">
-      <label class="flbl">ชื่อผู้ใช้ / User ID</label>
-      <input class="fi" id="lgUser" autocomplete="username" placeholder="ชื่อผู้ใช้ หรือ อีเมลบริษัท" onkeydown="if(event.key==='Enter'){var p=document.getElementById('lgPass'); if(p) p.focus();}">
+      <label class="flbl">${sbOn()?'อีเมลบริษัท':'ชื่อผู้ใช้ / User ID'}</label>
+      <input class="fi" id="lgUser" autocomplete="username" placeholder="${sbOn()?'name@company.co.th':'ชื่อผู้ใช้ หรือ อีเมลบริษัท'}" onkeydown="if(event.key==='Enter'){var p=document.getElementById('lgPass'); if(p) p.focus();}">
     </div>
     <div class="fgrp">
       <label class="flbl">รหัสผ่าน</label>
@@ -3526,8 +3600,8 @@ function renderLoginView(){
   if(currentUser){ ov.style.display = 'none'; _lgMode = null; return; }
   ov.style.display = 'flex';
   // ระหว่างรอข้อมูลผู้ใช้จากเซิร์ฟเวอร์ อย่าเพิ่งชวนสร้าง Admin คนแรก
-  const waiting = (typeof sbOn === 'function' && sbOn() && typeof sbReady !== 'undefined' && !sbReady);
-  const mode = userList.length ? 'login' : (waiting ? 'wait' : 'first');
+  const waiting = (typeof sbOn === 'function' && sbOn() && typeof authChecking !== 'undefined' && authChecking);
+  const mode = sbOn() ? (waiting ? 'wait' : 'login') : (userList.length ? 'login' : (waiting ? 'wait' : 'first'));
   if(mode === _lgMode) return;
   _lgMode = mode;
   document.getElementById('loginBody').innerHTML =
@@ -3543,11 +3617,28 @@ function loginErr(msg){
   const el = document.getElementById('lgErr');
   if(el) el.textContent = msg || '';
 }
-function doLogin(){
+async function doLogin(){
   const uEl = document.getElementById('lgUser'), pEl = document.getElementById('lgPass');
   if(!uEl || !pEl) return;
   const q = uEl.value.trim().toLowerCase();
   if(!q){ loginErr('กรอกชื่อผู้ใช้ก่อน'); uEl.focus(); return; }
+  if(sbOn()){
+    loginErr('กำลังตรวจสอบบัญชี…');
+    try{
+      await authSignIn(q, pEl.value);
+      await authFetchMembership();
+      loginErr('');
+      await sbBoot(true);
+      logAct('auth','เข้าใช้งาน', currentUser + ' · Role ' + roleLabel(currentRole()));
+      afterUserChange();
+      switchView('dash');
+    }catch(err){
+      await authSignOut(false);
+      loginErr(authFriendlyError(err));
+      pEl.value=''; pEl.focus();
+    }
+    return;
+  }
   const u = userList.find(x=>String(x.name||'').toLowerCase() === q)
          || userList.find(x=>String(x.email||'').toLowerCase() === q);
   if(!u){ loginErr('ไม่พบผู้ใช้นี้ในระบบ'); return; }
@@ -3563,6 +3654,7 @@ function doLogin(){
   switchView('dash');
 }
 function createFirstAdmin(){
+  if(sbOn()){ loginErr('สร้างบัญชีผ่าน Supabase Dashboard โดยผู้ดูแลระบบเท่านั้น'); return; }
   const name = (document.getElementById('lgNewName').value||'').trim();
   const email = (document.getElementById('lgNewMail').value||'').trim();
   const pw = document.getElementById('lgNewPass').value || DEFAULT_PW;
@@ -3584,7 +3676,7 @@ function renderUserUI(){
   const isAdmin = realRole === 'admin';
   const imp = document.getElementById('sideImpersonate');
   const act = document.getElementById('sideActivities');
-  if(imp) imp.style.display = (isAdmin && !impersonator) ? 'flex' : 'none';
+  if(imp) imp.style.display = (!sbOn() && isAdmin && !impersonator) ? 'flex' : 'none';
   if(act) act.style.display = (isAdmin && !impersonator) ? 'flex' : 'none';
   const mng = document.getElementById('sideManageUser');
   if(mng) mng.style.display = ((isAdmin && !impersonator) || !userList.length) ? 'flex' : 'none';
@@ -3622,6 +3714,12 @@ function openUserModal(){
     return;
   }
   document.getElementById('userInput').value='';
+  const controls = document.getElementById('userCreateControls');
+  const desc = document.getElementById('userModalDesc');
+  if(controls) controls.style.display = sbOn() ? 'none' : 'flex';
+  if(desc) desc.textContent = sbOn()
+    ? 'บัญชีและรหัสผ่านจัดการโดย System Owner ผ่าน Supabase Dashboard; หน้านี้แสดงสมาชิกที่ซิงก์มาเท่านั้น'
+    : 'คลิกชื่อของคุณเพื่อเข้าใช้งาน · ผู้ใช้ที่สร้างใหม่จะได้รหัสผ่านตั้งต้น 123456';
   renderUserList();
   document.getElementById('userModal').style.display='flex';
   setTimeout(()=>document.getElementById('userInput').focus(), 50);
@@ -3629,7 +3727,7 @@ function openUserModal(){
 function closeUserModal(){ document.getElementById('userModal').style.display='none'; }
 
 // เพิ่ม/ลบผู้ใช้ และเปลี่ยน Role ได้เฉพาะ Admin (ยกเว้นตอนยังไม่มีผู้ใช้เลย — สร้างคนแรกเป็น Admin)
-function canManageUsers(){ return !userList.length || can('manageUsers'); }
+function canManageUsers(){ return !sbOn() && (!userList.length || can('manageUsers')); }
 
 function roleSelectHTML(id, value, disabled){
   return `<select class="fi role-select" id="${id}"${disabled?' disabled':''}>
@@ -3638,6 +3736,11 @@ function roleSelectHTML(id, value, disabled){
 }
 function renderUserList(){
   const wrap = document.getElementById('userListWrap');
+  if(sbOn()){
+    wrap.innerHTML = `<div class="perm-note" style="margin:12px 0">เพิ่ม/เชิญผู้ใช้ รีเซ็ตรหัสผ่าน และกำหนด membership ผ่าน <b>Supabase Dashboard</b> ตาม runbook เท่านั้น</div>
+      ${userList.map(u=>`<div class="user-row"><div class="user-chip" style="flex:1;display:block">${esc(u.name)}${u.name===currentUser?' · กำลังใช้งาน':''}${u.email?`<div class="user-mail">${esc(u.email)}</div>`:''}</div><span class="role-badge ${esc(u.role)}">${esc(roleLabel(u.role))}</span></div>`).join('') || '<div class="modal-desc">ยังไม่มี membership ที่อ่านได้</div>'}`;
+    return;
+  }
   const admin = canManageUsers();
   const roleHelp = `<div class="role-help">${ROLE_KEYS.map(k=>`<div><b>${ROLES[k].label}</b> — ${ROLES[k].desc}</div>`).join('')}</div>`;
   if(!userList.length){
@@ -3660,6 +3763,7 @@ function renderUserList(){
     ${roleHelp}`;
 }
 function saveRoles(){
+  if(sbOn()){ alert('กำหนด membership ผ่าน Supabase Dashboard ตาม runbook'); return; }
   if(!canManageUsers()){ alert('เฉพาะ Admin เท่านั้นที่เปลี่ยน Role ได้'); return; }
   const changes = [];
   userList.forEach((u,i)=>{
@@ -3682,6 +3786,7 @@ function afterUserChange(){
   renderRecordsList();
 }
 function createUser(){
+  if(sbOn()){ alert('เชิญผู้ใช้ผ่าน Supabase Dashboard ตาม runbook'); return; }
   const name = document.getElementById('userInput').value.trim();
   const mailEl = document.getElementById('userEmail');
   const email = mailEl ? mailEl.value.trim() : '';
@@ -3739,6 +3844,7 @@ function migrateRecordOwners(){
 }
 // เพิ่มผู้ใช้ที่ยังไม่มีในระบบ (ของเดิมไม่ถูกแตะ) — รหัสผ่านเริ่มต้น 123456
 function seedTeamUsers(){
+  if(sbOn()){ alert('เชิญผู้ใช้ผ่าน Supabase Dashboard ตาม runbook'); return; }
   if(!canManageUsers()){ alert('เฉพาะ Admin เท่านั้นที่เพิ่มผู้ใช้ได้'); return; }
   const missing = SEED_USERS.filter(s => !findUser(s.name) && !userList.some(u=>u.email===s.email));
   if(!missing.length){ alert('มีผู้ใช้ตามรายชื่อทีมครบแล้วทั้ง '+SEED_USERS.length+' คน'); return; }
@@ -3769,6 +3875,10 @@ function hasPassword(name){ const u = findUser(name); return !!(u && u.pass); }
 // เปลี่ยน / ตั้งรหัสผ่านของตัวเอง
 function openChangePassword(){
   if(!currentUser){ alert('กรุณาเข้าใช้งานด้วย User ก่อนเปลี่ยนรหัสผ่าน'); openUserModal(); return; }
+  if(sbOn()){
+    showGModal(`<div class="modal-hd"><div><div class="modal-t">รหัสผ่าน Supabase Auth</div><div class="modal-desc">รหัสผ่านไม่ถูกเก็บหรือเปลี่ยนใน Formula Studio</div></div><button class="modal-x" onclick="closeGModal()">×</button></div><div class="perm-note" style="margin-top:16px">ใช้ขั้นตอนเปลี่ยน/กู้รหัสผ่านที่ System Owner กำหนดใน Supabase Dashboard แล้วเข้าใช้งานใหม่</div><div class="modal-acts"><button class="btn btn-g btn-sm" onclick="closeGModal()">ปิด</button></div>`);
+    return;
+  }
   const u = findUser(currentUser);
   const has = !!(u && u.pass);
   showGModal(`
@@ -3865,6 +3975,7 @@ function submitLoginPassword(i){
 // รหัสผ่านเริ่มต้นหลังรีเซ็ต — Admin รีเซ็ตให้ User คนใดก็ได้ หรือทั้งหมดพร้อมกัน
 const DEFAULT_PW = '123456';
 function resetUserPassword(i){
+  if(sbOn()){ alert('รีเซ็ตรหัสผ่านผ่าน Supabase Dashboard ตาม runbook'); return; }
   if(!canManageUsers()){ alert('เฉพาะ Admin เท่านั้นที่รีเซ็ตรหัสผ่านได้'); return; }
   const u = userList[i];
   if(!u) return;
@@ -3882,6 +3993,7 @@ function doResetUserPassword(i){
 }
 // รีเซ็ตรหัสผ่านของผู้ใช้ทุกคนพร้อมกัน
 function resetAllPasswords(){
+  if(sbOn()){ alert('รีเซ็ตรหัสผ่านผ่าน Supabase Dashboard ตาม runbook'); return; }
   if(!canManageUsers()){ alert('เฉพาะ Admin เท่านั้นที่รีเซ็ตรหัสผ่านได้'); return; }
   if(!userList.length) return;
   askConfirm('รีเซ็ตรหัสผ่านผู้ใช้ทั้งหมด ' + userList.length + ' คน?',
@@ -3898,6 +4010,7 @@ function doResetAllPasswords(){
 }
 
 function loginUserAt(i){
+  if(sbOn()){ alert('ต้องออกจากระบบแล้วเข้าใช้บัญชี Supabase Auth ที่ต้องการ'); return; }
   const u = userList[i];
   if(u.pass && u.name !== currentUser){ askLoginPassword(i); return; }
   currentUser = u.name;
@@ -3905,6 +4018,7 @@ function loginUserAt(i){
   afterUserChange(); closeUserModal();
 }
 function deleteUserAt(i){
+  if(sbOn()){ alert('ปิดสมาชิกผ่าน Supabase Dashboard ตาม runbook'); return; }
   if(!canManageUsers()){ alert('เฉพาะ Admin เท่านั้นที่ลบผู้ใช้ได้'); return; }
   const name = userList[i].name;
   if(!confirm(`ลบผู้ใช้ "${name}" ออกจากรายการ?\n(ประวัติที่บันทึกในชื่อนี้จะยังคงอยู่)`)) return;
@@ -3923,9 +4037,12 @@ function sideLogout(){
       : 'ข้อมูลทั้งหมดที่บันทึกไว้แล้วยังอยู่ครบ',
     'ต้องเข้าใช้งานใหม่ก่อน จึงจะสร้างงาน คุยในแชท หรืออนุมัติได้'
   ];
-  askConfirm('ออกจากระบบ', lines, 'ออกจากระบบ', function(){ logoutUser(); switchView('dash'); });
+  askConfirm('ออกจากระบบ', lines, 'ออกจากระบบ', function(){
+    switchView('dash');
+    logoutUser().catch(err=>console.warn('[auth]', safeError(err)));
+  });
 }
-function logoutUser(){
+async function logoutUser(){
   // ออกจากระบบระหว่างสวมบทบาท ต้องล้างสถานะสวมบทบาทด้วย ไม่งั้นค้างเป็นสถานะกำกวม
   if(impersonator){
     logAct('auth','ออกจากการสวมบทบาท', currentUser + ' → ' + impersonator);
@@ -3933,7 +4050,14 @@ function logoutUser(){
   }
   logAct('auth','ออกจากระบบ', currentUser);
   currentUser='';
+  // วาดหน้า login ให้เสร็จก่อนแจ้งเซิร์ฟเวอร์ · ถ้ารอ /auth/v1/logout ก่อน แล้วเน็ตช้า
+  // หรือหลุด ผู้ใช้จะเห็นหน้าจอค้างแบบ "กดออกจากระบบแล้วไม่มีอะไรเกิดขึ้น"
   afterUserChange(); renderUserList();
+  if(sbOn()){
+    try{ await authSignOut(true); }
+    catch(err){ console.warn('[auth] แจ้งเซิร์ฟเวอร์ตอนออกจากระบบไม่สำเร็จ', safeError(err)); }
+    afterUserChange();
+  }
 }
 
 // ========== MODIFY DATA (รายการรหัส → เข้าไปแก้สูตร/หมายเหตุ) ==========
@@ -4052,7 +4176,7 @@ function renderModify(){
   const ingRows = modifyIngs.map((r,i)=>`
     <tr id="ingrow-${i}" class="${r.verifiedBy?'ver':''}">
       <td style="color:var(--muted);text-align:center">${i+1}</td>
-      <td style="text-align:center;white-space:nowrap" id="ingfda-${i}">${r.fdaIcon}${r.hero?' ⭐':''}</td>
+      <td style="text-align:center;white-space:nowrap" id="ingfda-${i}">${esc(r.fdaIcon)}${r.hero?' ⭐':''}</td>
       <td><input id="mdin-${i}-name" value="${esc(r.name)}" oninput="fxMark(this)" onchange="editIng(${i},'name',this.value)"></td>
       <td><input id="mdin-${i}-w" value="${esc(r.w)}" oninput="fxMark(this)" onchange="editIng(${i},'w',this.value)" style="max-width:90px"></td>
       <td><input id="mdin-${i}-o" value="${esc(r.o)}" oninput="fxMark(this)" onchange="editIng(${i},'o',this.value)"></td>
@@ -4151,7 +4275,7 @@ function refreshIngStatus(i){
   const tr = document.getElementById('ingrow-'+i);
   if(tr) tr.classList.toggle('ver', !!modifyIngs[i].verifiedBy);
   const fda = document.getElementById('ingfda-'+i);   // สถานะ อย. อัพเดตตามค่าที่แก้
-  if(fda) fda.innerHTML = `${modifyIngs[i].fdaIcon}${modifyIngs[i].hero?' ⭐':''}`;
+  if(fda) fda.innerHTML = `${esc(modifyIngs[i].fdaIcon)}${modifyIngs[i].hero?' ⭐':''}`;
 }
 
 // ---- เพิ่ม / ลบ สารสกัดใน PD Modify Data ----
@@ -5086,7 +5210,8 @@ function saveJobSection(jobId, key){
   logAct('job','แก้ไขชุดข้อมูล ('+s.title+')', changes.join(' | '), r.id);
   const c = getChat(r.id);
   if(c){
-    changes.forEach(t=>pushSys(c, (currentUser||'ผู้ใช้')+' แก้ '+s.title+' — '+t));
+    invalidateChatApprovals(c);
+    changes.forEach(t=>pushSys(c, (currentUser||'ผู้ใช้')+' แก้ '+s.title+' — '+t, {action:'job_edit'}));
     touchChatPart(c, currentUser, false); saveChats();
   }
   closeGModal();
@@ -5332,6 +5457,9 @@ function restoreRecord(id, i){
 let chats = [];          // [{jobId, createdAt, createdBy, messages:[], parts:[], approvals:{}}]
 let chatOpenId = null;   // รหัสงานที่เปิดอยู่ (null = แสดงรายการห้องแชท)
 let chatJobOpen = true;  // เปิด/ปิดกล่องรายละเอียด Job ในห้องแชท
+let chatEventOutbox = [];
+let chatReadOutbox = [];
+let chatDeleteOutbox = [];
 
 const CHAT_PARTS = [
   {key:'pd', label:'PD Pass', desc:'ฝ่ายพัฒนาผลิตภัณฑ์'},
@@ -5346,8 +5474,48 @@ function loadChats(){
   try{ chats = JSON.parse(localStorage.getItem('fs_chats') || '[]'); }
   catch(e){ chats = []; }
   chats.forEach(c=>{ c.messages=c.messages||[]; c.parts=c.parts||[]; c.approvals=c.approvals||{}; });
+  try{ chatEventOutbox = JSON.parse(localStorage.getItem('fs_chat_event_outbox') || '[]'); }
+  catch(e){ chatEventOutbox = []; }
+  try{ chatReadOutbox = JSON.parse(localStorage.getItem('fs_chat_read_outbox') || '[]'); }
+  catch(e){ chatReadOutbox = []; }
+  try{ chatDeleteOutbox = JSON.parse(localStorage.getItem('fs_chat_delete_outbox') || '[]'); }
+  catch(e){ chatDeleteOutbox = []; }
 }
 function saveChats(){ try{ localStorage.setItem('fs_chats', JSON.stringify(chats)); }catch(e){}
+  sbQueue();
+}
+function sbChatEventsOn(){ return !!(sbOn() && authSession); }
+function chatEventId(){
+  if(window.crypto && typeof window.crypto.randomUUID==='function') return window.crypto.randomUUID();
+  return 'evt-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
+function saveChatOutboxes(){
+  try{
+    localStorage.setItem('fs_chat_event_outbox', JSON.stringify(chatEventOutbox));
+    localStorage.setItem('fs_chat_read_outbox', JSON.stringify(chatReadOutbox));
+    localStorage.setItem('fs_chat_delete_outbox', JSON.stringify(chatDeleteOutbox));
+  }catch(e){}
+}
+function queueChatEvent(jobId, payload, eventId){
+  if(!sbChatEventsOn() || !jobId || !payload) return null;
+  const id = eventId || chatEventId();
+  if(!chatEventOutbox.some(x=>x.eventId===id))
+    chatEventOutbox.push({eventId:id, jobId, payload:Object.assign({},payload)});
+  saveChatOutboxes();
+  sbQueue();
+  return id;
+}
+function queueChatSeen(jobId, seenTs){
+  if(!sbChatEventsOn() || !jobId) return;
+  chatReadOutbox = chatReadOutbox.filter(x=>x.jobId!==jobId);
+  chatReadOutbox.push({jobId, seenTs:Number(seenTs)||0});
+  saveChatOutboxes();
+  sbQueue();
+}
+function queueChatDelete(jobId){
+  if(!sbChatEventsOn() || !jobId) return;
+  if(!chatDeleteOutbox.includes(jobId)) chatDeleteOutbox.push(jobId);
+  saveChatOutboxes();
   sbQueue();
 }
 function getChat(jobId){ return chats.find(c=>c.jobId===jobId) || null; }
@@ -5375,6 +5543,7 @@ function markChatSeen(c){
   // เก็บเวลาที่ช้ากว่าไว้เสมอ — ข้อความจากอีกเครื่องอาจมีเวลาล้ำหน้าเครื่องนี้นิดหน่อย
   // ถ้าเก็บแค่เวลาปัจจุบัน กระดิ่งจะยังค้างอยู่ทั้งที่เพิ่งเปิดอ่านไปแล้ว
   c.seen[currentUser] = Math.max(nowTs(), chatLastTs(c));
+  queueChatSeen(c.jobId, c.seen[currentUser]);
   return true;
 }
 // กลุ่ม Tag ที่ถูกพับอยู่ (ค่าเริ่มต้น = กางทุกกลุ่ม จึงเก็บเฉพาะตัวที่ถูกพับ)
@@ -5485,8 +5654,21 @@ function touchChatPart(c, name, isMsg){
   if(isMsg) p.msgs++;
   return p;
 }
-function pushSys(c, text){
-  c.messages.push({type:'sys', text, ts:nowTs()});
+function invalidateChatApprovals(c){
+  if(!c) return false;
+  const changed = CHAT_PARTS.some(p=>c.approvals[p.key]);
+  if(changed) CHAT_PARTS.forEach(p=>{ c.approvals[p.key] = null; });
+  return changed;
+}
+function pushSys(c, text, opt){
+  const o = opt || {};
+  // ข้อความระบบสร้างเองจากค่าก่อน→หลังของฟิลด์ ซึ่งยาวเกิน 5000 ได้ง่ายมาก
+  // เมื่อผู้ใช้วางข้อความยาว ๆ ลงช่องหมายเหตุ — ตัดให้พอดีแทนที่จะปล่อยให้
+  // เซิร์ฟเวอร์ปฏิเสธแล้วทำให้ซิงก์ค้าง
+  const safe = chatClamp(text, CHAT_SYS_MAX);
+  c.messages.push({type:'sys', user:currentUser||'', text:safe, ts:nowTs()});
+  if(!o.skipQueue && !sbApplying && sbChatEventsOn())
+    queueChatEvent(c.jobId, {type:'system', action:o.action||'chat_created', text:safe});
 }
 
 // สร้างห้องแชทตามรหัสงาน
@@ -5499,7 +5681,7 @@ function createChat(jobId){
     jobId, createdAt: nowTs(), createdBy: currentUser||'',
     messages: [], parts: [], approvals: {pd:null, ra:null, rd:null}
   };
-  pushSys(c, `สร้างห้องแชทงาน ${jobId} — ${r.brand||r.customer||'Formula'}${currentUser?` โดย ${currentUser}`:''}`);
+  pushSys(c, `สร้างห้องแชทงาน ${jobId} — ${r.brand||r.customer||'Formula'}${currentUser?` โดย ${currentUser}`:''}`, {action:'chat_created'});
   chats.unshift(c);
   logAct('chat','สร้างห้องแชท', (r.brand||r.customer||''), jobId);
   touchChatPart(c, currentUser, false);
@@ -5520,6 +5702,7 @@ function deleteChat(jobId){
   if(!confirm(`ลบห้องแชทของงาน ${jobId}? ประวัติการสนทนาทั้งหมดจะหายไป`)) return;
   logAct('chat','ลบห้องแชท', 'ลบประวัติการสนทนาทั้งหมด', jobId);
   chats = chats.filter(c=>c.jobId!==jobId);
+  queueChatDelete(jobId);
   saveChats(); updateChatBadge();
   chatOpenId = null;
   renderChat(); renderRecordsList();
@@ -6018,7 +6201,8 @@ function chatSaveFormula(r, logText, defer){
   renderDashboard(r);
   const c = getChat(r.id);
   if(c){
-    (Array.isArray(logText) ? logText : [logText]).forEach(t=>pushSys(c, t));
+    invalidateChatApprovals(c);
+    (Array.isArray(logText) ? logText : [logText]).forEach(t=>pushSys(c, t, {action:'formula_change'}));
     touchChatPart(c, currentUser, false);
     saveChats();
   }
@@ -6190,7 +6374,7 @@ function doCloseJob(r){
   const idx = records.findIndex(x=>x.id===r.id);
   if(idx>=0){ records[idx]=r; saveRecordsStore(); }
   const c = getChat(r.id);
-  if(c){ pushSys(c, `${currentUser} ปิดงาน (Close job)`); touchChatPart(c, currentUser, false); saveChats(); }
+  if(c){ pushSys(c, `${currentUser} ปิดงาน (Close job)`, {action:'close_job'}); touchChatPart(c, currentUser, false); saveChats(); }
   updateChatBadge();          // เอารหัสงานออกจากเมนูซ้ายทันที
   renderChat(); renderRecordsList();
 }
@@ -6209,7 +6393,7 @@ function doReopenJob(r){
   const idx = records.findIndex(x=>x.id===r.id);
   if(idx>=0){ records[idx]=r; saveRecordsStore(); }
   const c = getChat(r.id);
-  if(c){ pushSys(c, `${currentUser} เปิดงานอีกครั้ง`); touchChatPart(c, currentUser, false); saveChats(); }
+  if(c){ pushSys(c, `${currentUser} เปิดงานอีกครั้ง`, {action:'reopen_job'}); touchChatPart(c, currentUser, false); saveChats(); }
   updateChatBadge();          // รหัสงานกลับเข้าเมนูซ้ายทันที
   renderChat(); renderRecordsList();
 }
@@ -6217,6 +6401,16 @@ function doReopenJob(r){
 function chatKey(e){
   if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendChatMsg(); }
 }
+// ขีดจำกัดความยาวฝั่งเซิร์ฟเวอร์ (supabase/schema.sql: fs_append_chat_event)
+// ต้องกันตั้งแต่ฝั่ง client ไม่งั้นข้อความยาวเกินจะถูกเก็บลงเครื่อง เข้า outbox
+// แล้วถูกปฏิเสธซ้ำ ๆ จนซิงก์ค้างถาวร
+const CHAT_MSG_MAX = 10000;
+const CHAT_SYS_MAX = 5000;
+function chatClamp(text, max){
+  const t = String(text==null?'':text);
+  return t.length>max ? t.slice(0, max-1) + '…' : t;
+}
+
 function sendChatMsg(){
   const c = getChat(chatOpenId);
   if(!c) return;
@@ -6224,10 +6418,16 @@ function sendChatMsg(){
   const ta = document.getElementById('chatInput');
   const text = (ta.value||'').trim();
   if(!text) { ta.focus(); return; }
+  if(text.length > CHAT_MSG_MAX){
+    alert('ข้อความยาวเกินไป (' + text.length.toLocaleString() + ' ตัวอักษร)\nส่งได้สูงสุด ' + CHAT_MSG_MAX.toLocaleString() + ' ตัวอักษร');
+    ta.focus();
+    return;
+  }
   ta.value = '';            // ล้างทันทีที่กดส่ง
   c.messages.push({type:'msg', user:currentUser, text, ts:nowTs()});
   logAct('chat','ส่งข้อความ', text.length>160 ? text.slice(0,160)+'…' : text, c.jobId);
   touchChatPart(c, currentUser, true);
+  queueChatEvent(c.jobId, {type:'message', text});
   saveChats();
   renderChat();
   const nta = document.getElementById('chatInput');
@@ -6400,7 +6600,7 @@ async function exportChatExcel(jobId){
   c.exports = (c.exports || 0) + 1;
   c.lastExportBy = currentUser || '';
   c.lastExportAt = new Date().toLocaleString('th-TH');
-  pushSys(c, `${currentUser || 'ผู้ใช้'} ส่งออกไฟล์ Excel (${r.id})`);
+  pushSys(c, `${currentUser || 'ผู้ใช้'} ส่งออกไฟล์ Excel (${r.id})`, {action:'export'});
   touchChatPart(c, currentUser, false);
   saveChats();
   renderChat();
@@ -6837,18 +7037,14 @@ function parseCSV(text) {
         rest.join(',').split(',').forEach(v=>{
           v=v.replace(/^"|"$/g,'').trim();
           if(v){ const tc=document.getElementById('tc_cons'),ti=document.getElementById('ti_cons');
-            const tag=document.createElement('span');tag.className='tag';
-            tag.innerHTML=`${v}<button class="tag-x" onclick="this.parentElement.remove()">×</button>`;
-            tc.insertBefore(tag,ti);}
+            appendTag(tc,ti,v);}
         });
       }
       else if(fld==='claims') {
         rest.join(',').split(',').forEach(v=>{
           v=v.replace(/^"|"$/g,'').trim();
           if(v){ const tc=document.getElementById('tc_claims'),ti=document.getElementById('ti_claims');
-            const tag=document.createElement('span');tag.className='tag';
-            tag.innerHTML=`${v}<button class="tag-x" onclick="this.parentElement.remove()">×</button>`;
-            tc.insertBefore(tag,ti);}
+            appendTag(tc,ti,v);}
         });
       }
     }
@@ -7138,7 +7334,241 @@ addRow();
 function sbOn(){ return !!(typeof SB_URL!=='undefined' && SB_URL && SB_KEY); }
 // รับได้ทั้งแบบใส่ Project URL เปล่า ๆ และแบบก๊อป URL ที่ลงท้าย /rest/v1/ มาเลย
 function sbBase(){ return String(SB_URL||'').replace(/\/+$/,'').replace(/\/rest\/v1$/,''); }
+const AUTH_SESSION_KEY = 'fs_auth_session';
+let authSession = null;
+let authMembership = null;
+let authOpcUserReference = null;
+let authChecking = false;
 
+function authFriendlyError(err){
+  const msg = String(err && err.message || err || '');
+  if(/invalid login|invalid credentials|400/i.test(msg)) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+  // แยก "ยังไม่ได้ตั้งค่าสิทธิ์" ออกจาก "รหัสผ่านผิด" และจาก "เน็ตมีปัญหา"
+  // ระบบที่เพิ่ง deploy แต่ยังไม่ seed fs_memberships จะล็อกอินไม่ได้เลย และเดิม
+  // ขึ้นข้อความเดียวกับตอนเน็ตล่ม จนหาสาเหตุไม่เจอ
+  if(/no membership|NO_MEMBERSHIP/i.test(msg))
+    return 'เข้าสู่ระบบได้แล้ว แต่ยังไม่มีสิทธิ์ใช้งานในระบบนี้ — ผู้ดูแลต้องเพิ่มบัญชีนี้ใน fs_memberships ก่อน';
+  if(/OPC_USER_REFERENCE_MISSING/i.test(msg)) return 'บัญชีนี้ไม่พบใน OPC Workflow user reference หรือยังไม่ Active';
+  if(/OPC_USER_REFERENCE_PROVIDER_UNCONFIGURED/i.test(msg)) return 'ระบบยังไม่ได้เชื่อมต่อ OPC Workflow user reference';
+  if(/OPC_USER_REFERENCE_UNAVAILABLE/i.test(msg)) return 'ระบบกลางของ OPC Workflow ยังไม่พร้อมใช้งาน กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ';
+  if(/inactive/i.test(msg)) return 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+  if(/membership|403/i.test(msg)) return 'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+  if(/storage|quota/i.test(msg)) return 'เบราว์เซอร์บล็อกการเก็บข้อมูลของเว็บไซต์ — ปิดโหมดส่วนตัวหรืออนุญาต site data แล้วลองใหม่';
+  return 'เข้าใช้งานไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
+}
+function safeError(err){
+  return String(err && err.message || err || '')
+    .replace(/Bearer\s+[^\s,}]+/gi,'Bearer [REDACTED]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,'[REDACTED_JWT]')
+    .replace(/\bsb_(?:publishable|secret)_[A-Za-z0-9._-]+\b/gi,'[REDACTED_SUPABASE_KEY]')
+    .replace(/((?:access|refresh)_token\s*[=:]\s*)[^\s,}]+/gi,'$1[REDACTED]')
+    .slice(0,500);
+}
+function authStoreSession(session){
+  if(!session || !session.access_token || !session.refresh_token) throw new Error('Invalid Auth session');
+  const normalized = Object.assign({}, session);
+  if(!normalized.expires_at) normalized.expires_at = Math.floor(Date.now()/1000) + Number(normalized.expires_in || 3600);
+  if(authSession && (authSession.access_token !== normalized.access_token ||
+      authSession.user?.id !== normalized.user?.id)) teardownPrivateWorkspace();
+  authSession = normalized;
+  // เบราว์เซอร์ที่บล็อกข้อมูลเว็บไซต์ (หน้าต่างส่วนตัว / นโยบายองค์กร) จะ throw ตรงนี้
+  // ถ้าไม่ดัก error จะทะลุออกไปเป็น "ตรวจสอบอินเทอร์เน็ต" ซึ่งชี้สาเหตุผิดจนแก้ไม่ถูก
+  // session ยังอยู่ในหน่วยความจำ ใช้งานต่อได้จนกว่าจะปิดแท็บ
+  try{ sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(normalized)); }
+  catch(err){ console.warn('[auth] เบราว์เซอร์ไม่ยอมให้เก็บ session — จะต้องเข้าใช้งานใหม่เมื่อรีเฟรช'); }
+  try{ localStorage.removeItem(AUTH_SESSION_KEY); }catch(err){}
+  authScheduleRefresh();
+  localStorage.removeItem('fs_user');
+  localStorage.removeItem('fs_imp');
+  return normalized;
+}
+function authClearSession(){
+  clearTimeout(authRefreshTimer);
+  authRefreshTimer = null;
+  // ถอนพื้นที่ทำงานส่วนตัวก่อนล้าง session ไม่งั้นปุ่มกับ panel จะค้างอยู่บนหน้าจอ
+  // ของคนที่ออกจากระบบไปแล้ว และ Blob URL จะยังอ้างถึงโค้ดของมันได้อยู่
+  try{ teardownPrivateWorkspace(); }catch(err){}
+  authSession = null;
+  authMembership = null;
+  authOpcUserReference = null;
+  currentUser = '';
+  impersonator = '';
+  try{ sessionStorage.removeItem(AUTH_SESSION_KEY); }catch(err){}
+  try{
+    localStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem('fs_user');
+    localStorage.removeItem('fs_imp');
+  }catch(err){}
+  sbReady = false;
+}
+async function authRequest(path, opt){
+  const o = opt || {};
+  const headers = Object.assign({apikey:SB_KEY,'Content-Type':'application/json'}, o.headers || {});
+  const res = await fetch(sbBase() + '/auth/v1/' + path, {
+    method:o.method || 'POST', headers,
+    body:o.body ? JSON.stringify(o.body) : undefined
+  });
+  const txt = await res.text();
+  if(!res.ok) throw new Error(res.status + ' ' + txt.slice(0,180));
+  return txt ? JSON.parse(txt) : null;
+}
+async function authSignIn(email, password){
+  const session = await authRequest('token?grant_type=password', {body:{email:String(email||'').trim(),password:String(password||'')}});
+  return authStoreSession(session);
+}
+// Supabase access token มีอายุ ~1 ชั่วโมง เดิม authRefreshSession ถูกเรียกเฉพาะ
+// ตอนเปิดแอป พอเปิดแท็บทิ้งไว้ครบชั่วโมง sbCycle จะได้ 401 แล้วเด้งผู้ใช้ออกกลางคัน
+// ทั้งที่ refresh_token ยังใช้ได้อยู่ · ตัวจับเวลานี้ต่ออายุล่วงหน้าให้เอง
+let authRefreshTimer = null;
+function authScheduleRefresh(){
+  clearTimeout(authRefreshTimer);
+  if(!authSession || !authSession.expires_at) return;
+  const msLeft = (Number(authSession.expires_at) * 1000) - Date.now();
+  // ต่ออายุก่อนหมด 5 นาที และไม่ถี่กว่า 30 วินาที
+  const delay = Math.max(30000, msLeft - 5*60*1000);
+  authRefreshTimer = setTimeout(function(){
+    if(!authSession) return;
+    authRefreshSession().catch(err=>console.warn('[auth] ต่ออายุ session ไม่สำเร็จ', safeError(err)));
+  }, delay);
+}
+
+async function authRefreshSession(){
+  if(!authSession || !authSession.refresh_token) throw new Error('No refresh token');
+  try{
+    const session = await authRequest('token?grant_type=refresh_token', {body:{refresh_token:authSession.refresh_token}});
+    return authStoreSession(session);
+  }catch(err){ authClearSession(); throw err; }
+}
+async function authRestoreSession(){
+  if(!sbOn()) return null;
+  try{ authSession = JSON.parse(sessionStorage.getItem(AUTH_SESSION_KEY) || 'null'); }
+  catch(err){ authSession = null; }
+  if(!authSession || !authSession.access_token || !authSession.refresh_token){ authClearSession(); return null; }
+  if(Number(authSession.expires_at || 0) <= Math.floor(Date.now()/1000) + 60) return authRefreshSession();
+  return authSession;
+}
+async function authSignOut(notifyServer){
+  const token = authSession && authSession.access_token;
+  try{
+    if(notifyServer !== false && token){
+      await authRequest('logout', {headers:{Authorization:'Bearer '+token}});
+    }
+  }catch(err){ console.warn('[auth] sign-out server notification failed'); }
+  authClearSession();
+}
+function authDataHeaders(){
+  if(!authSession || !authSession.access_token) throw new Error('Authentication required');
+  return {apikey:SB_KEY,Authorization:'Bearer '+authSession.access_token,'Content-Type':'application/json'};
+}
+function opcUserReferenceOn(){ return OPC_USER_REFERENCE_ENABLED === true; }
+function opcUserReferenceProvider(){
+  return typeof window !== 'undefined' && typeof window.__FS_OPC_USER_REFERENCE_PROVIDER__ === 'function'
+    ? window.__FS_OPC_USER_REFERENCE_PROVIDER__ : fetchOpcUserReference;
+}
+async function fetchOpcUserReference(){
+  const response = await fetch('/api/opc-user-directory', {
+    method:'GET',
+    headers:{Accept:'application/json', Authorization:'Bearer ' + String(authSession && authSession.access_token || '')},
+    credentials:'same-origin',
+    cache:'no-store'
+  });
+  if(!response.ok) throw new Error('OPC_USER_REFERENCE_UNAVAILABLE: '+response.status);
+  const payload = await response.json();
+  if(!payload || !Array.isArray(payload.users)) throw new Error('OPC_USER_REFERENCE_INVALID: response users must be an array');
+  return payload.users;
+}
+function opcReferenceValue(row, keys){
+  for(const key of keys){
+    if(row && row[key] != null && String(row[key]).trim() !== '') return row[key];
+  }
+  return '';
+}
+function normalizeOpcUserReferenceRows(rows){
+  if(!Array.isArray(rows)) throw new Error('OPC_USER_REFERENCE_INVALID: rows must be an array');
+  const seen = new Set();
+  return rows.map((row, index)=>{
+    if(!row || typeof row !== 'object') throw new Error('OPC_USER_REFERENCE_INVALID: row '+(index+1));
+    const values = Object.values(row).map(v=>String(v == null ? '' : v).trim());
+    if(!values.some(Boolean)) return null; // allow a trailing blank sheet row
+    const opcUserId = String(opcReferenceValue(row,['opc_user_id','source_record_id','opc_username','OPC Username'])).trim();
+    const name = String(opcReferenceValue(row,['name','display_name','user_name','User Name'])).trim();
+    const department = String(opcReferenceValue(row,['department','position_department','Position / Department'])).trim();
+    const role = String(opcReferenceValue(row,['role','current_role','Current Role'])).trim().toLowerCase();
+    const opcLoginEmail = String(opcReferenceValue(row,['opc_login_email','login_email','OPC Login Email'])).trim().toLowerCase();
+    const cloudflareAccessEmail = String(opcReferenceValue(row,['cloudflare_access_email','access_email','Cloudflare Access Email'])).trim().toLowerCase();
+    const activeValue = row && (row.is_active ?? row.isActive);
+    const status = String(opcReferenceValue(row,['status','user_status','User Status']) ||
+      (activeValue === false ? 'inactive' : 'active')).trim().toLowerCase();
+    if(!opcUserId || !name || (!opcLoginEmail && !cloudflareAccessEmail)){
+      throw new Error('OPC_USER_REFERENCE_INVALID: required identity fields missing at row '+(index+1));
+    }
+    if(seen.has(opcUserId)) throw new Error('OPC_USER_REFERENCE_INVALID: duplicate OPC user id');
+    seen.add(opcUserId);
+    if(status !== 'active') return null;
+    return {opc_user_id:opcUserId,name,department,role,opc_login_email:opcLoginEmail,
+      cloudflare_access_email:cloudflareAccessEmail,status};
+  }).filter(Boolean);
+}
+function matchOpcUserReference(rows, authUser){
+  const email = String(authUser && authUser.email || '').trim().toLowerCase();
+  if(!email) return null;
+  const matches = rows.filter(row => row.opc_login_email === email || row.cloudflare_access_email === email);
+  if(matches.length > 1) throw new Error('OPC_USER_REFERENCE_INVALID: email maps to multiple active users');
+  return matches[0] || null;
+}
+async function resolveOpcUserReference(authUser, membership){
+  if(!opcUserReferenceOn()) return null;
+  const provider = opcUserReferenceProvider();
+  if(!provider) throw new Error('OPC_USER_REFERENCE_PROVIDER_UNCONFIGURED');
+  const rows = await provider({
+    source: OPC_USER_REFERENCE_SOURCE,
+    auth_user: {id:authUser && authUser.id || '', email:authUser && authUser.email || ''},
+    membership: {name:membership && membership.name || '', role:membership && membership.role || ''}
+  });
+  const reference = matchOpcUserReference(normalizeOpcUserReferenceRows(rows), authUser);
+  if(!reference) throw new Error('OPC_USER_REFERENCE_MISSING');
+  return reference;
+}
+async function authFetchMembership(){
+  if(!authSession || !authSession.user || !authSession.user.id) throw new Error('Missing authenticated user');
+  const rows = await sbReq('fs_memberships?select=user_id,name,role,active&user_id=eq.' + encodeURIComponent(authSession.user.id));
+  const membership = rows && rows[0];
+  if(!membership){
+    authClearSession();
+    throw new Error('NO_MEMBERSHIP: authenticated but no membership row exists');
+  }
+  if(!membership.active){
+    authClearSession();
+    throw new Error('Inactive membership');
+  }
+  if(!ROLES[membership.role]){
+    authClearSession();
+    throw new Error('Unknown membership role');
+  }
+  let opcReference = null;
+  try{
+    opcReference = await resolveOpcUserReference(authSession.user, membership);
+  }catch(err){
+    authClearSession();
+    throw err;
+  }
+  if(authMembership && (authMembership.role !== membership.role ||
+      authMembership.user_id !== membership.user_id || authMembership.active !== membership.active ||
+      (authOpcUserReference && opcReference && authOpcUserReference.opc_user_id !== opcReference.opc_user_id))) teardownPrivateWorkspace();
+  authMembership = membership;
+  authOpcUserReference = opcReference;
+  currentUser = membership.name;
+  impersonator = '';
+  const local = findUser(membership.name);
+  if(local){ local.role=membership.role; local.email=(authSession.user.email||local.email||''); local.pass=null; }
+  else userList.push({name:membership.name,role:membership.role,email:authSession.user.email||'',pass:null});
+  // เดิมตรงนี้ล้าง activities ทิ้งทุกครั้งที่ non-admin ล็อกอิน ทำให้ activity ที่
+  // สร้างตอน offline หายถาวรก่อนได้ push ขึ้นเซิร์ฟเวอร์ — ผิดกฎเหล็กข้อ 2
+  // ("ห้ามเขียนทับ/เคลียร์ store ใด ๆ ตอน load") และข้อ 4 โดยตรง
+  // การมองไม่เห็นหน้า Activity เป็นเรื่องสิทธิ์การ "แสดงผล" ไม่ใช่เหตุผลให้ลบข้อมูล
+  saveUsers();
+  return membership;
+}
 let sbReady = false;        // pull สำเร็จอย่างน้อย 1 ครั้งแล้ว
 let sbCanEdit = true;        // IAM อนุญาต FORMULA_EDIT ให้ผู้ใช้คนนี้หรือไม่
 let sbIamSeen = false;       // เคยได้คำตอบจากด่าน IAM จริง ๆ แล้วหรือยัง (ดีพลอยที่ไม่มีด่าน จะไม่มีวันเป็น true)
@@ -7210,23 +7640,80 @@ function sbWMBack(iso){
   const t = Date.parse(iso);
   return t ? new Date(t - SB_LAG_MS).toISOString() : iso;
 }
+let sbPollingStarted = false;
+// สแนปช็อตของสิ่งที่เซิร์ฟเวอร์มี (เท่าที่เรารู้) ใช้หาว่าอะไรเปลี่ยน/ถูกลบ
+function sbEmptySnapshot(){ return {records:{},chats:{},users:{},acts:{},counter:null}; }
+function sbLoadSnapshot(){
+  try{
+    const value=JSON.parse(localStorage.getItem('fs_sync_snapshot')||'null');
+    return value && value.records && value.chats && value.users && value.acts ? value : sbEmptySnapshot();
+  }catch(err){ return sbEmptySnapshot(); }
+}
+function sbPersistSnapshot(){
+  try{ localStorage.setItem('fs_sync_snapshot',JSON.stringify(sbSnap)); }catch(err){}
+}
+// ข้อความบอกผู้ใช้ว่าบัญชีนี้ดูได้อย่างเดียว (ตั้งตอน push แล้วโชว์ที่ chip)
+let sbReadOnlyNote = '';
+
+// uid ของ activity ที่ push สำเร็จแล้ว
+//
+// เก็บแยกจาก sbSnap.acts โดยตั้งใจ: fs_activities ให้ SELECT เฉพาะ admin ส่วน
+// role อื่นได้ 200 [] กลับมา (RLS ที่ using ไม่ผ่านคืน "ไม่มีแถว" ไม่ใช่ error)
+// ถ้าอาศัย sbSnap.acts ที่มาจากการ pull ทุกครั้ง ร่องรอยว่า "ส่งไปแล้ว" จะถูกล้าง
+// ทุกรอบ แล้ว client จะ re-upload activity ทั้งกองทุก 5 วินาทีตลอดไป
+let actPushed = (function(){
+  try{ const v=JSON.parse(localStorage.getItem('fs_act_pushed')||'null'); return (v&&typeof v==='object')?v:{}; }
+  catch(err){ return {}; }
+})();
+function saveActPushed(){
+  try{
+    const keys=Object.keys(actPushed);
+    if(keys.length>ACT_MAX){ const keep={}; keys.slice(-ACT_MAX).forEach(k=>keep[k]=1); actPushed=keep; }
+    localStorage.setItem('fs_act_pushed',JSON.stringify(actPushed));
+  }catch(err){}
+}
+
+// ข้อผิดพลาดจากเซิร์ฟเวอร์ที่บอกได้ว่าเป็น "ไม่มีสิทธิ์" หรือ "ส่งซ้ำก็ไม่ผ่าน"
+function sbHttpError(status, text){
+  const err = new Error(status + ' ' + String(text||'').slice(0,180));
+  err.sbStatus = status;
+  // 4xx ที่ไม่ใช่ 401/408/429 คือคำตอบเดิมทุกครั้งที่ลองใหม่ — retry ไปก็เท่านั้น
+  err.sbPermanent = status>=400 && status<500 && status!==401 && status!==408 && status!==429;
+  return err;
+}
+function sbIsPermanent(err){ return !!(err && err.sbPermanent); }
+
+// สิทธิ์เขียนฝั่งเซิร์ฟเวอร์ (สะท้อน policy ใน supabase/schema.sql ตรง ๆ)
+// มีไว้เพื่อ "ไม่ส่งสิ่งที่รู้อยู่แล้วว่าจะถูกปฏิเสธ" ไม่ใช่เพื่อใช้แทนการตรวจฝั่งเซิร์ฟเวอร์
+function sbRoleForServer(){ return (authMembership && authMembership.role) || currentRole(); }
+function sbCanInsertRecords(){ return ['admin','sales','opc','mkt'].includes(sbRoleForServer()); }
+function sbCanUpdateRecords(){ return ['admin','sales','opc','mkt','pd'].includes(sbRoleForServer()); }
+function sbCanWriteMeta(){ return ['admin','sales','opc','mkt'].includes(sbRoleForServer()); }
 
 async function sbReq(path, opt){
   const o = opt || {};
   const res = await fetch(sbBase() + '/rest/v1/' + path, {
     method: o.method || 'GET',
-    headers: Object.assign({
-      apikey: SB_KEY,
-      Authorization: 'Bearer ' + SB_KEY,
-      'Content-Type': 'application/json'
-    }, o.headers || {}),
+    headers: Object.assign(authDataHeaders(), o.headers || {}),
     body: o.body ? JSON.stringify(o.body) : undefined
   });
   if(!res.ok){
     const t = await res.text();
-    const err = new Error(res.status + ' ' + t.slice(0,180));
-    err.status = res.status;
-    throw err;
+    // token หมดอายุระหว่างใช้งาน: ต่ออายุแล้วลองใหม่หนึ่งครั้งก่อนจะยอมแพ้
+    // (ทำครั้งเดียว กัน loop เมื่อ refresh_token เองก็หมดอายุแล้ว)
+    if(res.status===401 && !o._retried && authSession && authSession.refresh_token){
+      try{
+        await authRefreshSession();
+        return await sbReq(path, Object.assign({}, o, {_retried:true}));
+      }catch(err){ /* ต่ออายุไม่ได้จริง ๆ — ตกไปที่ทางล้าง session ด้านล่าง */ }
+    }
+    // 401 = ตัวตนหมดอายุ/ไม่ถูกต้อง → ล็อกอินใหม่เท่านั้นที่แก้ได้
+    // 403 = ตัวตนถูกต้องแต่ไม่มีสิทธิ์ (RLS / guard trigger) → "ห้าม" ล้าง session
+    //       เพราะ PostgREST ตอบ 403 ทุกครั้งที่ policy ปฏิเสธ ถ้าล้าง session ตรงนี้
+    //       ผู้ใช้จะถูกเด้งออกหน้า login แล้ว delta ที่ถูกปฏิเสธยังค้างอยู่ พอล็อกอิน
+    //       ใหม่ก็ push ซ้ำแล้วเด้งอีก วนไม่จบจนใช้งานไม่ได้เลย
+    if(res.status===401) authClearSession();
+    throw sbHttpError(res.status, t);
   }
   try{
     const d = res.headers && res.headers.get && res.headers.get('Date');
@@ -7255,10 +7742,10 @@ async function sbReqAll(path){
     if(page.length < SB_PAGE) return out;
   }
 }
-function sbUpsert(table, rows){
+function sbUpsert(table, rows, preference){
   if(!rows.length) return Promise.resolve();
   return sbReq(table, {method:'POST', body:rows,
-    headers:{Prefer:'resolution=merge-duplicates,return=minimal'}});
+    headers:{Prefer:(preference||'resolution=merge-duplicates')+',return=minimal'}});
 }
 function sbInList(keys){
   return 'in.' + encodeURIComponent('(' + keys.map(k=>'"' + String(k).split('"').join('') + '"').join(',') + ')');
@@ -7318,16 +7805,15 @@ function sbChip(){
   let cls = 'sync-chip on', txt;
   if(sbErr){ cls += ' err'; txt = 'ซิงก์ไม่สำเร็จ — กดเพื่อลองใหม่'; }
   else if(sbBusy){ cls += ' busy'; txt = 'กำลังซิงก์…'; }
-  else if(sbReady && !sbCanEdit){ cls += ' ok'; txt = 'ซิงก์แล้ว · อ่านอย่างเดียว'; }
+  else if(sbReadOnlyNote || (sbReady && !sbCanEdit)){ cls += ' ok'; txt = 'ซิงก์แล้ว (ดูอย่างเดียว)'; }
   else if(sbReady){ cls += ' ok'; txt = 'ซิงก์แล้ว' + (sbLastPush ? ' · ' + new Date(sbLastPush).toLocaleTimeString('th-TH') : ''); }
   else { txt = 'กำลังเชื่อมต่อ…'; }
   el.className = cls;
   el.textContent = txt;
-  el.title = sbErr
-    ? ('ข้อผิดพลาด: ' + sbErr + '\nกดเพื่อลองซิงก์ใหม่')
-    : (!sbCanEdit && sbReady
-      ? 'บัญชีนี้อ่านข้อมูล Formula ได้ แต่ยังไม่มีสิทธิ์แก้ไขแบบรายบุคคล — ไม่มีการส่งข้อมูลขึ้นเซิร์ฟเวอร์'
-      : 'ข้อมูลซิงก์กับเซิร์ฟเวอร์กลาง — กดเพื่อซิงก์ทันที');
+  // บอกให้ชัดว่าทำไมงานในเครื่องถึงไม่ขึ้นเซิร์ฟเวอร์ แทนที่จะเงียบแล้วให้เดาเอง
+  el.title = sbErr ? ('ข้อผิดพลาด: ' + sbErr + '\nกดเพื่อลองซิงก์ใหม่')
+    : ((sbReadOnlyNote || (sbReady && !sbCanEdit)) ? ((sbReadOnlyNote || 'บัญชีนี้อ่านข้อมูล Formula ได้ แต่ยังไม่มีสิทธิ์แก้ไขแบบรายบุคคล') + '\nกดเพื่อซิงก์ทันที')
+    : 'ข้อมูลซิงก์กับเซิร์ฟเวอร์กลาง — กดเพื่อซิงก์ทันที');
 }
 
 // ---------- เลขงานจากเซิร์ฟเวอร์ ----------
@@ -7466,6 +7952,38 @@ function recDirty(r){
   return stableStr(r) !== snap;
 }
 function sbApply(d){
+  // Testable/forward-compatible shape used by the Auth + membership client.
+  // The REST puller below still returns the legacy row shape, so normalize only
+  // when a caller provides already-decoded domain objects.
+  if(Array.isArray(d && d.records)){
+    const beforeSecure = JSON.stringify([records, chats, userList, activities.length, recCounter]);
+    const prior = sbSnap || sbEmptySnapshot();
+    const remoteRecords = {};
+    d.records.forEach(r=>{ if(r && r.id) remoteRecords[r.id] = r; });
+    const mergedRecords = [];
+    records.forEach(local=>{
+      if(!local || !local.id) return;
+      const remote = remoteRecords[local.id];
+      if(!remote){ mergedRecords.push(local); return; }
+      const priorJson = prior.records && prior.records[local.id];
+      const localJson = JSON.stringify(local);
+      mergedRecords.push(priorJson && localJson !== priorJson ? local : remote);
+      delete remoteRecords[local.id];
+    });
+    Object.keys(remoteRecords).forEach(id=>mergedRecords.push(remoteRecords[id]));
+    records = mergedRecords;
+    if(Array.isArray(d.chats)) chats = d.chats.slice();
+    if(Array.isArray(d.users) && d.users.length) userList = d.users.map(u=>Object.assign({},u,{pass:null}));
+    if(d.counter != null) recCounter = Math.max(recCounter, Number(d.counter)||0);
+    sbSnap = {records:{},chats:{},users:{},acts:{},counter:Number(d.counter)||0};
+    d.records.forEach(r=>{ if(r && r.id) sbSnap.records[r.id] = JSON.stringify(r); });
+    (d.chats||[]).forEach(c=>{ if(c && c.jobId) sbSnap.chats[c.jobId] = JSON.stringify(c); });
+    (d.users||[]).forEach(u=>{ if(u && u.name) sbSnap.users[u.name] = JSON.stringify(u); });
+    (d.acts||[]).forEach(e=>{ sbSnap.acts[actUid(e)] = 1; });
+    sbPersistSnapshot();
+    if(JSON.stringify([records, chats, userList, activities.length, recCounter]) !== beforeSecure) sbRerender();
+    return true;
+  }
   const before = JSON.stringify([records, chats, userList, activities.length]);
   sbApplying = true;
   try{
@@ -7670,167 +8188,160 @@ function sbGuardTakeServer(){
   sbGuardClear();
   sbCycle(true);
 }
-// seed = ยกข้อมูลชุดแรกขึ้นเซิร์ฟเวอร์ที่ยืนยันแล้วว่าว่างเปล่า (ข้ามด่านกันสำเนาเก่า)
-async function sbPush(seed){
-  const capBefore = sbCap.msg && sbCap.apv;
-  const recUp=[], chtUp=[], usrUp=[], actUp=[], msgUp=[], apvUp=[], apvDel=[];
-  const seenR={}, seenC={}, seenU={};
-  const recHeld = [];
-  records.forEach(r=>{
-    const j = stableStr(r); seenR[r.id]=1;
-    const snap = sbSnap.records[r.id];
-    if(snap === j) return;                       // ตรงกับเซิร์ฟเวอร์อยู่แล้ว
-    // ไม่มีฐานเทียบ (รอบนี้ยังไม่เคยดึงงานใบนี้ลงมา) และไม่มีใครแก้ในเครื่องนี้
-    // = เป็นสำเนาเก่าที่ค้างอยู่ ห้ามดันขึ้นไปทับของบนเซิร์ฟเวอร์เด็ดขาด
-    // เคสจริงที่เคยเกิด: A00798 ถูกเขียนทับด้วยค่าก่อนแก้ 24 จุด โดยไม่มีใครแตะงานนั้นเลย
-    if(snap === undefined && !recTouched[r.id] && !seed){ recHeld.push(r.id); return; }
-    recUp.push({id:r.id, data:r});
-  });
-  if(recHeld.length) console.warn('[sync] ไม่ส่งสำเนาเก่าที่ไม่มีใครแก้ในเครื่องนี้ขึ้นเซิร์ฟเวอร์:', recHeld.join(', '));
-  chats.forEach(c=>{
-    seenC[c.jobId]=1;
-    const pay = chatPayload(c), j = stableStr(pay);
-    if(sbSnap.chats[c.jobId] !== j) chtUp.push({job_id:c.jobId, data:pay});
-    if(sbCap.msg){
-      (c.messages||[]).forEach(m=>{
-        const u = msgUid(c.jobId, m);
-        if(!sbSnap.msgs[u]) msgUp.push({uid:u, job_id:c.jobId, ts:m.ts||0, data:m});
+// ---------- จำสภาพปัจจุบันว่าตรงกับเซิร์ฟเวอร์แล้ว ----------
+function sbSnapshot(){
+  const m = {records:{}, chats:{}, users:{}, acts:{}, counter:recCounter};
+  records.forEach(r=>{ m.records[r.id] = JSON.stringify(r); });
+  chats.forEach(c=>{ m.chats[c.jobId] = JSON.stringify(c); });
+  userList.forEach(u=>{ m.users[u.name] = JSON.stringify(u); });
+  activities.forEach(e=>{ m.acts[actUid(e)] = 1; });
+  sbSnap = m;
+  sbPersistSnapshot();
+}
+
+// รายการที่เซิร์ฟเวอร์ปฏิเสธถาวร — เก็บไว้ให้ตรวจได้ ไม่ทิ้งเงียบ ๆ
+let chatDeadLetter = (function(){
+  try{ const v=JSON.parse(localStorage.getItem('fs_chat_dead_letter')||'null'); return Array.isArray(v)?v:[]; }
+  catch(err){ return []; }
+})();
+function saveChatDeadLetter(){
+  try{
+    if(chatDeadLetter.length>200) chatDeadLetter = chatDeadLetter.slice(-200);
+    localStorage.setItem('fs_chat_dead_letter',JSON.stringify(chatDeadLetter));
+  }catch(err){}
+}
+
+async function sbPushChatEvents(){
+  if(!sbChatEventsOn() || !chatEventOutbox.length) return false;
+  let changed = false;
+  for(const item of chatEventOutbox.slice()){
+    try{
+      await sbReq('rpc/fs_append_chat_event', {
+        method:'POST',
+        body:{p_event_id:item.eventId,p_job_id:item.jobId,p_payload:item.payload}
       });
+    }catch(err){
+      // ข้อความที่ยาวเกินหรือผิดกติกาจะถูกปฏิเสธเหมือนเดิมทุกครั้ง ถ้าปล่อยให้ throw
+      // ออกไป sbPush จะหยุดตั้งแต่บรรทัดแรก แล้ว records/activities/counter จะไม่ถูก
+      // ส่งอีกเลย — แชทข้อความเดียวทำให้ทั้งระบบหยุดซิงก์ถาวรและไม่มี UI ให้เคลียร์
+      if(!sbIsPermanent(err)) throw err;
+      chatEventOutbox = chatEventOutbox.filter(x=>x.eventId!==item.eventId);
+      chatDeadLetter.push({kind:'event', jobId:item.jobId, eventId:item.eventId, at:Date.now(), err:safeError(err)});
+      saveChatDeadLetter();
+      saveChatOutboxes();
+      console.warn('[sync] เซิร์ฟเวอร์ปฏิเสธ chat event ถาวร ข้ามไปก่อน', safeError(err));
+      continue;
     }
-    if(sbCap.apv){
-      CHAT_PARTS.forEach(p=>{
-        const k = c.jobId + '|' + p.key;
-        const a = (c.approvals||{})[p.key];
-        const aj = a ? stableStr(a) : '';
-        if(aj){ if(sbSnap.apvs[k] !== aj) apvUp.push({job_id:c.jobId, part:p.key, data:a}); }
-        else if(sbSnap.apvs[k]) apvDel.push([c.jobId, p.key]);
-      });
-    }
-  });
-  userList.forEach(u=>{
-    const j = stableStr(u); seenU[u.name]=1;
-    if(sbSnap.users[u.name] !== j) usrUp.push({name:u.name, data:u});
-  });
-  activities.forEach(e=>{
-    const u = actUid(e);
-    if(!sbSnap.acts[u]) actUp.push({uid:u, ts:e.ts||0, data:e});
-  });
-  // เลือก "ใช้ของจากเซิร์ฟเวอร์" ไว้ → รอบนี้ไม่ต้องส่ง record ขึ้นเลย
-  if(sbGuardTake) recUp.length = 0;
-  // เบรกฉุกเฉิน: นับว่ารอบนี้จะไปแก้ 'สูตร' ของงานกี่ใบพร้อมกัน
-  // (การติด Tag / ปิดงาน หลายใบพร้อมกันไม่นับ เพราะไม่ได้แตะสูตร)
-  if(!sbGuardOK && recUp.length > SB_GUARD_MAX){
-    const rowsHit = recUp.filter(u=>{
-      const s = sbSnap.records[u.id];
-      if(s === undefined) return false;         // งานใหม่ที่เซิร์ฟเวอร์ยังไม่มี ไม่นับ
-      let old = null; try{ old = JSON.parse(s); }catch(e){ return false; }
-      return stableStr((u.data||{}).rows || []) !== stableStr((old||{}).rows || []);
-    }).map(u=>u.id);
-    if(rowsHit.length > SB_GUARD_MAX){
-      sbGuardHold(rowsHit);
-      recUp.length = 0;      // งานอื่น ๆ (แชท/อนุมัติ/ผู้ใช้) ยังส่งขึ้นได้ตามปกติ
-    }
+    chatEventOutbox = chatEventOutbox.filter(x=>x.eventId!==item.eventId);
+    saveChatOutboxes();
+    changed = true;
   }
+  return changed;
+}
+async function sbPushChatReads(){
+  if(!sbChatEventsOn() || !chatReadOutbox.length) return false;
+  for(const item of chatReadOutbox.slice()){
+    try{
+      await sbReq('rpc/fs_mark_chat_seen', {
+        method:'POST', body:{p_job_id:item.jobId,p_seen_ts:item.seenTs}
+      });
+    }catch(err){
+      if(!sbIsPermanent(err)) throw err;
+      chatReadOutbox = chatReadOutbox.filter(x=>x.jobId!==item.jobId);
+      chatDeadLetter.push({kind:'read', jobId:item.jobId, at:Date.now(), err:safeError(err)});
+      saveChatDeadLetter(); saveChatOutboxes();
+      continue;
+    }
+    chatReadOutbox = chatReadOutbox.filter(x=>x.jobId!==item.jobId);
+    saveChatOutboxes();
+  }
+  return true;
+}
+async function sbPushChatDeletes(){
+  if(!sbChatEventsOn() || !chatDeleteOutbox.length) return false;
+  for(const jobId of chatDeleteOutbox.slice()){
+    try{
+      await sbReq('rpc/fs_delete_chat', {method:'POST',body:{p_job_id:jobId}});
+    }catch(err){
+      if(!sbIsPermanent(err)) throw err;
+      chatDeleteOutbox = chatDeleteOutbox.filter(x=>x!==jobId);
+      chatDeadLetter.push({kind:'delete', jobId:jobId, at:Date.now(), err:safeError(err)});
+      saveChatDeadLetter(); saveChatOutboxes();
+      continue;
+    }
+    chatDeleteOutbox = chatDeleteOutbox.filter(x=>x!==jobId);
+    saveChatOutboxes();
+  }
+  return true;
+}
+
+// ---------- ส่งเฉพาะสิ่งที่เปลี่ยนขึ้นเซิร์ฟเวอร์ ----------
+async function sbPush(){
+  const recUp = [], chtUp = [], usrUp = [], actUp = [];
+  const seenR = {}, seenC = {}, seenU = {};
+  const secureChatEvents = sbChatEventsOn();
+  const chatEventsPushed = secureChatEvents ? await sbPushChatEvents() : false;
+  const chatReadsPushed = secureChatEvents ? await sbPushChatReads() : false;
+  const chatDeletesPushed = secureChatEvents ? await sbPushChatDeletes() : false;
+  records.forEach(r=>{ const j = JSON.stringify(r); seenR[r.id]=1;
+    if(sbSnap.records[r.id] !== j) recUp.push({id:r.id, data:r}); });
+  chats.forEach(c=>{ const j = JSON.stringify(c); seenC[c.jobId]=1;
+    if(!secureChatEvents && sbSnap.chats[c.jobId] !== j) chtUp.push({job_id:c.jobId, data:c}); });
+  // Secure-mode user lifecycle is Dashboard/membership-owned; browser is read-only.
+  userList.forEach(u=>{ seenU[u.name]=1; });
   // ลบเฉพาะรายการที่เคยอยู่บนเซิร์ฟเวอร์แล้วถูกลบในเครื่องนี้จริง
-  // ถ้ารอบดึงข้อมูลล่าสุดได้มาไม่ครบ ห้ามสั่งลบเด็ดขาด — ของที่ "ไม่เห็น" อาจแค่ยังมาไม่ถึง
-  const recDel = sbPartial ? [] : Object.keys(sbSnap.records).filter(k=>!seenR[k]);
-  const chtDel = sbPartial ? [] : Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
-  const usrDel = sbPartial ? [] : Object.keys(sbSnap.users).filter(k=>!seenU[k]);
-  const counterUp = !sbCap.seq && sbSnap.counter !== recCounter;
-  const tagsUp = sbSnap.tags !== stableStr(tagList);
+  const recDel = Object.keys(sbSnap.records).filter(k=>!seenR[k]);
+  const chtDel = secureChatEvents ? [] : Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
+  const usrDel = [];
+  activities.filter(e=>currentRole()==='admin' || (e.user===currentUser && !e.via))
+    .forEach(e=>{ const u = actUid(e); if(!sbSnap.acts[u] && !actPushed[u]) actUp.push({uid:u, ts:e.ts||0, data:e}); });
+  // เทียบเป็นตัวเลขเสมอ: schema ไม่ได้ seed fs_meta ไว้ ค่าจากเซิร์ฟเวอร์จึงเป็น null
+  // ส่วน recCounter เริ่มที่ 0 — ถ้าเทียบด้วย !== ตรง ๆ จะได้ "ต่างกัน" ทุกครั้ง แล้ว
+  // ทุก sync จะพยายาม push fs_meta ซึ่ง policy ให้เฉพาะ admin/sales/opc/mkt เขียน
+  // ผลคือ pd/ra/rd/purchasing โดน 403 ตั้งแต่ sync แรกและใช้งานไม่ได้เลย
+  const serverCounter = Number(sbSnap.counter || 0);
+  const localCounter = Number(recCounter || 0);
+  const counterUp = sbCanWriteMeta() && localCounter > serverCounter;
+  if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length
+     && !recDel.length && !chtDel.length && !usrDel.length && !counterUp
+     && !chatEventsPushed && !chatReadsPushed && !chatDeletesPushed){ sbReadOnlyNote=''; return false; }
 
-  if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length && !msgUp.length
-     && !apvUp.length && !apvDel.length && !recDel.length && !chtDel.length && !usrDel.length && !counterUp && !tagsUp) return false;
-
-  await sbUpsert('fs_records', recUp);
-  recUp.forEach(x=>{ sbSnap.records[x.id] = stableStr(x.data); delete recTouched[x.id]; });
-  // ส่งข้อความและการอนุมัติ "ก่อน" อัปเดตข้อมูลห้อง
-  // ถ้าเน็ตหลุดคาระหว่างสองคำสั่ง ข้อมูลห้องเดิมที่ยังมีข้อความอยู่จะไม่ถูกเขียนทับไปก่อน
-  if(msgUp.length && await sbTry('msg', async ()=>{ await sbUpsert('fs_messages', msgUp); return true; }, false)){
-    msgUp.forEach(x=>{ sbSnap.msgs[x.uid] = 1; });
-  }
-  if(apvUp.length && await sbTry('apv', async ()=>{ await sbUpsert('fs_approvals', apvUp); return true; }, false)){
-    apvUp.forEach(x=>{ sbSnap.apvs[x.job_id+'|'+x.part] = stableStr(x.data); });
-  }
-  if(capBefore && !(sbCap.msg && sbCap.apv)){
-    // เพิ่งรู้ว่าเซิร์ฟเวอร์ยังไม่มีตารางใหม่ → ส่งห้องแชทแบบเดิม (รวมข้อความ) ทั้งก้อนในรอบนี้เลย
-    const whole = chats.map(c=>({job_id:c.jobId, data:c}));
-    await sbUpsert('fs_chats', whole);
-    whole.forEach(x=>{ sbSnap.chats[x.job_id] = stableStr(x.data); });
-  } else {
-    // เซิร์ฟเวอร์รูปแบบเดิมเก็บข้อความไว้ในแถวห้อง — ส่งทับตรง ๆ จะลบข้อความของคนอื่นทิ้ง
-    // จึงต้องอ่านของล่าสุดมารวมก่อนเสมอ
-    if(chtUp.length && !sbCap.msg) await mergeServerChats(chtUp);
-    await sbUpsert('fs_chats', chtUp);
-    chtUp.forEach(x=>{ sbSnap.chats[x.job_id] = stableStr(x.data); });
-  }
+  // แยก insert กับ update ออกจากกัน เพราะ policy คนละชุด: insert ให้
+  // admin/sales/opc/mkt ส่วน update ให้ +pd · role ที่เขียนไม่ได้ (ra, rd,
+  // purchasing) เคยติด 403 ตั้งแต่มี local record ค้างอยู่ใบเดียว แล้วโดนเด้งออก
+  // ทุกครั้งที่ล็อกอิน — ตอนนี้ข้ามการส่งไปเงียบ ๆ และยังอ่าน/ทำงาน offline ได้ตามเดิม
+  const recNew = recUp.filter(r=>!sbSnap.records[r.id]);
+  const recEdit = recUp.filter(r=>!!sbSnap.records[r.id]);
+  const recSend = [].concat(sbCanInsertRecords()?recNew:[], sbCanUpdateRecords()?recEdit:[]);
+  const recSkipped = recUp.length - recSend.length;
+  if(recSkipped>0) sbReadOnlyNote = 'บัญชีนี้ไม่มีสิทธิ์บันทึกขึ้นเซิร์ฟเวอร์ ' + recSkipped + ' รายการ (ดูได้อย่างเดียว)';
+  else sbReadOnlyNote = '';
+  await sbUpsert('fs_records', recSend);
+  if(!secureChatEvents) await sbUpsert('fs_chats', chtUp);
   await sbUpsert('fs_users', usrUp);
-  usrUp.forEach(x=>{ sbSnap.users[x.name] = stableStr(x.data); });
   if(actUp.length){
-    await sbUpsert('fs_activities', actUp);
-    actUp.forEach(x=>{ sbSnap.acts[x.uid] = 1; });
-  }
-  for(let i=0;i<apvDel.length;i++){
-    const jb = apvDel[i][0], pt = apvDel[i][1];
-    await sbTry("apv", ()=>sbReq("fs_approvals?job_id=eq." + encodeURIComponent(jb) + "&part=eq." + encodeURIComponent(pt), {method:"DELETE"}), null);
-    delete sbSnap.apvs[jb+'|'+pt];
+    await sbUpsert('fs_activities', actUp, 'resolution=ignore-duplicates');
+    // จำไว้นอก snapshot ที่ได้จากการ pull ไม่งั้นรอบหน้าจะส่งซ้ำทั้งกองอีก
+    actUp.forEach(a=>{ sbSnap.acts[a.uid] = 1; actPushed[a.uid] = 1; });
+    saveActPushed();
   }
   await sbDelete('fs_records', 'id', recDel);
-  recDel.forEach(k=>{ delete sbSnap.records[k]; });
-  if(chtDel.length){
-    await sbDelete('fs_chats', 'job_id', chtDel);
-    await sbTry("msg", ()=>sbDelete("fs_messages", "job_id", chtDel), null);
-    await sbTry("apv", ()=>sbDelete("fs_approvals", "job_id", chtDel), null);
-    chtDel.forEach(k=>{
-      delete sbSnap.chats[k];
-      Object.keys(sbSnap.msgs).forEach(u=>{ /* ข้อความของห้องที่ถูกลบ ปล่อยให้ตกไปตอน full sync */ });
-      CHAT_PARTS.forEach(p=>{ delete sbSnap.apvs[k+'|'+p.key]; });
-    });
-  }
+  if(!secureChatEvents) await sbDelete('fs_chats', 'job_id', chtDel);
   await sbDelete('fs_users', 'name', usrDel);
-  usrDel.forEach(k=>{ delete sbSnap.users[k]; });
-  if(counterUp){
-    await sbUpsert('fs_meta', [{key:'reccounter', value:recCounter}]);
-    sbSnap.counter = recCounter;
-  }
-  if(tagsUp){
-    await sbUpsert('fs_meta', [{key:'tags', value:tagList}]);
-    sbSnap.tags = stableStr(tagList);
-  }
+  if(counterUp) await sbUpsert('fs_meta', [{key:'reccounter', value:Number(recCounter||0)}]);
+  sbSnapshot();
   sbLastPush = Date.now();
   return true;
 }
 
-// อ่านห้องแชทล่าสุดจากเซิร์ฟเวอร์มารวมกับที่กำลังจะส่ง (ใช้เฉพาะเซิร์ฟเวอร์รูปแบบเดิม)
-async function mergeServerChats(chtUp){
-  try{
-    const ids = chtUp.map(x=>x.job_id);
-    const rows = await sbReq('fs_chats?select=job_id,data&job_id=' + sbInList(ids));
-    const byId = {};
-    (rows||[]).forEach(r=>{ byId[r.job_id] = r.data || {}; });
-    chtUp.forEach(x=>{
-      const srv = byId[x.job_id];
-      if(!srv) return;
-      if(mergeChatPayload(x.data, srv)){
-        const local = chats.find(cc=>cc.jobId===x.job_id);
-        if(local && local !== x.data) mergeChatPayload(local, srv);
-      }
-    });
-  }catch(err){
-    console.warn('[sync] อ่านห้องแชทเดิมมารวมไม่สำเร็จ — ข้ามการรวมรอบนี้:', String(err && err.message || err));
-  }
-}
-
-// เรียกจากทุกจุดที่แอปบันทึกข้อมูล — รวบหลาย ๆ การบันทึกที่ติดกันเป็นครั้งเดียว
+// เรียกจากทุกจุดที่แอปบันทึกข้อมูล — รวมการเปลี่ยนแปลงติดกันเป็นรอบเดียว
 function sbQueue(){
-  if(!sbOn() || !sbCanEdit || !sbReady || sbApplying) return;
+  if(!sbOn() || !authSession || !sbCanEdit || !sbReady || sbApplying) return;
   sbTouchBusy();
   clearTimeout(sbPushTimer);
-  sbPushTimer = setTimeout(()=>sbCycle(true), SB_SEND_MS);
+  sbPushTimer = setTimeout(()=>sbCycle(true), 400);
 }
 
-// ---------- รอบการซิงก์: ส่งขึ้น แล้วดึงลง ----------
-let sbCycleRunning = false;
 let sbCycleAgain = false;   // มีของใหม่เข้ามาระหว่างรอบที่กำลังวิ่งอยู่
 async function sbCycle(urgent){
   if(!sbOn()) return;
@@ -7852,8 +8363,15 @@ async function sbCycle(urgent){
     // มีอะไรขยับ (เราส่งขึ้น หรือคนอื่นส่งมา) = ยังคุยกันอยู่ ให้กลับไปรอบไว
     if(pushed || changed) sbTouchBusy();
     sbErr = '';
+    // ตรวจสิทธิ์ของพื้นที่ทำงานส่วนตัวซ้ำทุกรอบ
+    //
+    // เดิมเรียกแค่ตอน sbBoot แปลว่าถ้าสิทธิ์ถูกถอน role เปลี่ยน หรือได้ 403
+    // ระหว่างเปิดแท็บทิ้งไว้ ปุ่มกับ panel จะยังอยู่จนกว่าผู้ใช้จะรีเฟรชเอง
+    // ซึ่งขัดกับสัญญาที่ว่า "สิทธิ์หาย = ถอนออกทันที"
+    try{ await mountPrivateWorkspace(); }
+    catch(err){ console.warn('[workspace]', safeError(err)); }
   }catch(err){
-    sbErr = String(err && err.message || err);
+    sbErr = safeError(err);
     console.warn('[sync]', sbErr);
   }finally{
     sbBusy = false; sbCycleRunning = false; sbChip();
@@ -7861,44 +8379,277 @@ async function sbCycle(urgent){
     else sbSchedule();      // นับเวลารอบถัดไปจากตอนที่รอบนี้จบ
   }
 }
+//  ทั้งบล็อกนี้ไม่รู้จักชื่อของ workspace ที่มันโหลด · ชื่อแท็บ ที่อยู่ของ bundle และ
+//  โหมด มาจากคำตอบของเซิร์ฟเวอร์ทั้งหมด และเซิร์ฟเวอร์เป็นคนตัดสินว่าใครได้เห็น
+//
+//  ผู้ที่ไม่มีสิทธิ์ต้องไม่เกิดอะไรขึ้นเลย: ไม่มีปุ่ม ไม่มี panel ไม่มี key ใน
+//  localStorage และไม่มีแม้แต่คำขอ bundle · คำตอบ 404 เปล่า ๆ แยกไม่ออกจาก
+//  "ไม่มีอะไรอยู่ตรงนั้น"
+// ===================================================================
 
-// ---------- จังหวะดึงข้อมูล ----------
-// นับจาก "รอบที่แล้วจบ" ไม่ใช่ตั้งนาฬิกาตายตัว — เน็ตช้าแล้วรอบจะไม่กองซ้อนกัน
-let sbTimer = null;
-function sbSchedule(){
-  clearTimeout(sbTimer);
-  sbTimer = setTimeout(sbTick, sbNextDelay());
-}
-function sbTick(){
-  if(!sbOn()) return;
-  // อยู่แท็บอื่น หรือรอบก่อนยังไม่จบ → ข้ามรอบนี้ แต่ต้องตั้งเวลารอบถัดไปต่อเสมอ
-  if(document.hidden || sbCycleRunning){ sbSchedule(); return; }
-  sbCycle(false);
-}
-function sbManualSync(){ if(sbOn()){ sbErr=''; sbCycle(true); } }
+let pwsState = null;
+let pwsPending = null;
 
-// ---------- เริ่มทำงานตอนเปิดแอป ----------
-async function sbBoot(){
+let pwsCspWarned = false;
+
+/**
+ * อ่าน connect-src จาก CSP ของหน้านี้ · คืน null เมื่อไม่มี CSP หรือไม่มี connect-src
+ * (ไม่มี directive = เบราว์เซอร์ fallback ไป default-src ซึ่งเราถือว่า "ไม่รู้" และ
+ * ให้ผู้เรียกตัดสินใจแบบปิดไว้ก่อน)
+ */
+function pwsCspConnectSrc(){
+  const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+  const content = meta && meta.getAttribute('content');
+  if(typeof content !== 'string' || content === '') return null;
+  for(const directive of content.split(';')){
+    const parts = directive.trim().split(/\s+/).filter(Boolean);
+    if(parts.length && parts[0].toLowerCase() === 'connect-src') return parts.slice(1);
+  }
+  return null;
+}
+
+/**
+ * CSP ยอมให้ยิงไป origin นี้หรือไม่ · ตอบ false เมื่อไม่มี CSP ให้ตรวจ เพื่อไม่ให้
+ * หน้าที่ลืมประกาศ CSP กลายเป็นทางผ่านที่ bundle ส่งข้อมูลออกไปไหนก็ได้
+ */
+function pwsCspAllowsConnect(origin){
+  const sources = pwsCspConnectSrc();
+  if(!sources) return false;
+  let target;
+  try{ target = new URL(origin); }catch(err){ return false; }
+  return sources.some(function(source){
+    if(source === '*') return true;
+    let candidate = source;
+    if(candidate.startsWith("'")) return false;            // 'self' ไม่ใช่ origin ภายนอก
+    if(candidate.indexOf('://') === -1) candidate = 'https://' + candidate;
+    const wildcard = candidate.indexOf('://*.');
+    if(wildcard !== -1){
+      const scheme = candidate.slice(0, wildcard + 3);
+      const suffix = candidate.slice(wildcard + 5).replace(/\/+$/, '');
+      if(scheme !== target.protocol + '//') return false;
+      if(!suffix || suffix.indexOf('*') !== -1) return false;
+      return target.host.length > suffix.length && target.host.endsWith('.' + suffix);
+    }
+    let parsed;
+    try{ parsed = new URL(candidate); }catch(err){ return false; }
+    if(parsed.pathname !== '/' || parsed.search || parsed.hash) return false;
+    return parsed.origin === target.origin;
+  });
+}
+
+/** origin ที่อนุมัติต้องเป็น HTTPS origin เปล่า ๆ เท่านั้น ไม่มี path ไม่มี wildcard */
+function pwsApprovedOrigin(){
+  const value = SCIENCE_WORKSPACE_API_ORIGIN;
+  if(typeof value !== 'string' || value === '') return '';
+  let url;
+  try{ url = new URL(value); }catch(err){ return ''; }
+  if(url.protocol !== 'https:') return '';
+  if(url.username || url.password) return '';
+  if(url.pathname !== '/' || url.search || url.hash) return '';
+  // ตัวแยกวิเคราะห์ยอมรับ * ในชื่อโฮสต์ ถ้าปล่อยไว้ คนตั้งค่าที่เขียน *.example.com
+  // จะได้ค่าที่ไม่แมตช์อะไรเลยแบบเงียบ ๆ
+  if(!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(url.hostname)) return '';
+  if(value.replace(/\/+$/,'') !== url.origin) return '';
+  // fail-closed: bundle รันใน origin เดียวกับ Formula ถ้า CSP ไม่ได้อนุญาต origin นี้
+  // ไว้ การ mount จะได้ workspace ที่ยิง request ไม่ออก และ operator จะไม่รู้สาเหตุ
+  if(!pwsCspAllowsConnect(url.origin)){
+    if(!pwsCspWarned){
+      pwsCspWarned = true;
+      console.error('private workspace: configured origin is not allowed by the page connect-src policy; refusing to mount');
+    }
+    return '';
+  }
+  return url.origin;
+}
+
+/** Local preflight only; the server still decides grants and assignments. */
+function pwsContext(){
+  const origin = pwsApprovedOrigin();
+  if(!origin || !sbOn() || !authSession?.access_token || !authSession.user?.id ||
+      authMembership?.active !== true || authMembership.user_id !== authSession.user.id ||
+      !['rd','ra','admin'].includes(authMembership.role)) return '';
+  return JSON.stringify([origin, authSession.user.id, authSession.access_token,
+    authMembership.role, authMembership.user_id || '']);
+}
+
+function pwsRemoveState(){
+  const state = pwsState;
+  pwsState = null;
+  if(!state) return;
+  state.controller.abort();
+  try{ if(typeof state.handle?.destroy === 'function') state.handle.destroy(); }catch(err){}
+  try{ state.navEl.remove(); }catch(err){}
+  try{ state.panelEl.remove(); }catch(err){}
+  try{ if(state.blobUrl) URL.revokeObjectURL(state.blobUrl); }catch(err){}
+}
+
+/** ถอนทุกอย่างที่ loader สร้างไว้ รวมงานที่ยังรอผลอยู่ */
+function teardownPrivateWorkspace(){
+  const pending = pwsPending;
+  pwsPending = null;
+  if(pending) pending.controller.abort();
+  pwsRemoveState();
+}
+
+/** Transport scoped to this mounted workspace, without exposing its bearer token. */
+function pwsRequest(state, origin, token){
+  const check = ()=>{
+    if(pwsState !== state || state.controller.signal.aborted) throw new Error('Workspace unavailable');
+    if(pwsContext() !== state.context){ teardownPrivateWorkspace(); throw new Error('Workspace unavailable'); }
+  };
+  return async function(path, options={}){
+    check();
+    if(typeof path !== 'string' || !path.startsWith('/api/private-workspaces/')) throw new Error('Invalid workspace path');
+    const url = new URL(path, origin);
+    if(url.origin !== origin || !url.pathname.startsWith('/api/private-workspaces/') ||
+        url.username || url.password || url.hash) throw new Error('Invalid workspace path');
+    const method = options.method || 'GET';
+    if(!['GET','POST'].includes(method)) throw new Error('Invalid workspace method');
+    const response = await fetch(url.toString(), {method,
+      headers:{Authorization:'Bearer ' + token, 'Content-Type':'application/json'},
+      body:method === 'POST' ? JSON.stringify(options.body || {}) : undefined,
+      credentials:'omit', cache:'no-store', redirect:'error', signal:state.controller.signal});
+    check();
+    if(!response.ok){
+      if([401,403,404].includes(response.status)) teardownPrivateWorkspace();
+      throw new Error('Workspace request failed');
+    }
+    const result = await response.json();
+    check();
+    return result;
+  };
+}
+
+/** ถาม manifest ใหม่เสมอ และรับผลเฉพาะ session ที่เริ่มคำขอนั้น */
+async function mountPrivateWorkspace(){
+  const context = pwsContext();
+  if(!context){ teardownPrivateWorkspace(); return; }
+  if(pwsPending || (pwsState && pwsState.context !== context)) teardownPrivateWorkspace();
+  const origin = pwsApprovedOrigin();
+  const token = authSession.access_token;
+  const request = {context, controller:new AbortController()};
+  pwsPending = request;
+  const current = ()=>{
+    if(pwsPending !== request || request.controller.signal.aborted) return false;
+    if(pwsContext() !== context){ teardownPrivateWorkspace(); return false; }
+    return true;
+  };
+  const options = {method:'GET', headers:{Authorization:'Bearer ' + token},
+    credentials:'omit', cache:'no-store', signal:request.controller.signal};
+  try{
+    const response = await fetch(origin + '/api/private-workspaces/formula', options);
+    if(!current()) return;
+    if(!response.ok){ teardownPrivateWorkspace(); return; }
+    const manifest = await response.json();
+    if(!current()) return;
+    if(!manifest || manifest.allowed !== true || typeof manifest.label !== 'string' || !manifest.label){
+      teardownPrivateWorkspace(); return;
+    }
+    const bundleUrl = new URL(String(manifest.bundleUrl || ''), origin + '/');
+    if(bundleUrl.origin !== origin || bundleUrl.protocol !== 'https:' || bundleUrl.username || bundleUrl.password){
+      teardownPrivateWorkspace(); return;
+    }
+    const key = String(manifest.version || '') + '\u0000' + String(manifest.mode || '');
+    if(pwsState && pwsState.key === key && pwsState.context === context) return;
+    pwsRemoveState();
+    const bundle = await fetch(bundleUrl.toString(), options);
+    if(!current()) return;
+    if(!bundle.ok) return;
+    const source = await bundle.text();
+    if(!current()) return;
+    const panel = pwsCreatePanel();
+    if(!panel) return;
+    const nav = pwsCreateNav(manifest.label);
+    if(!nav){ panel.remove(); return; }
+    const state = {navEl:nav, panelEl:panel, blobUrl:'', key, context,
+      controller:request.controller, handle:null};
+    pwsState = state;
+    try{
+      state.blobUrl = URL.createObjectURL(new Blob([source], {type:'text/javascript'}));
+      const mod = await import(state.blobUrl);
+      if(!current()) return;
+      const mount = mod && (mod.mount || mod.default);
+      if(typeof mount !== 'function') throw new Error('Missing mount');
+      const handle = await mount(panel, {mode:manifest.mode, signal:request.controller.signal, request:pwsRequest(state, origin, token)});
+      if(!current() || pwsState !== state){
+        try{ if(typeof handle?.destroy === 'function') handle.destroy(); }catch(err){}
+        return;
+      }
+      state.handle = handle;
+    }catch(err){
+      if(current() && pwsState === state){
+        panel.textContent = 'เปิดพื้นที่ทำงานส่วนตัวไม่สำเร็จ กรุณาลองใหม่';
+      }
+    }
+  }catch(err){
+    // ผลผิดพลาดเก่าห้ามถอนพื้นที่ทำงานของ session ใหม่
+    if(current()) teardownPrivateWorkspace();
+  }finally{
+    if(pwsPending === request) pwsPending = null;
+  }
+}
+
+/** ปุ่มใหม่ต่อท้ายเมนูเดิม ไม่ขยับของเดิมสักปุ่ม */
+function pwsCreateNav(label){
+  const host = document.getElementById('chatGroup');
+  if(!host || !host.parentNode) return null;
+  const btn = document.createElement('div');
+  btn.id = 'pwsNav';
+  btn.className = 'side-item';
+  // ป้ายมาจากเซิร์ฟเวอร์ · ใส่เป็นข้อความล้วนเสมอ ไม่ใช่ HTML
+  btn.textContent = label;
+  btn.onclick = function(){ switchView('pws'); };
+  host.parentNode.insertBefore(btn, host.nextSibling);
+  return btn;
+}
+
+/** panel ใหม่ต่อท้ายใน .main ไม่แตะ panel เดิม */
+function pwsCreatePanel(){
+  const main = document.querySelector('.main');
+  if(!main) return null;
+  const panel = document.createElement('section');
+  panel.id = 'pwsPanel';
+  // ใช้ class 'view' เหมือน panel เดิมทุกอัน switchView จึงปิดมันให้เองอยู่แล้ว
+  panel.className = 'view';
+  main.appendChild(panel);
+  return panel;
+}
+
+async function sbBoot(sessionAlreadyChecked){
   if(!sbOn()) return;
+  if(authChecking) return;
+  authChecking = true;
   sbChip();
   try{
+    if(!sessionAlreadyChecked){
+      const session = await authRestoreSession();
+      if(!session){ renderUserUI(); return; }
+      await authFetchMembership();
+    }
     await sbLoadWritePermission();
     const d = await sbPull(true);
-    if(d.empty && sbCanEdit && (records.length || chats.length || userList.length)){
-      // เซิร์ฟเวอร์ยังว่าง แต่เครื่องนี้มีข้อมูลอยู่ → ยกข้อมูลชุดแรกขึ้นไปตั้งต้น
-      sbReady = true;
-      await sbPush(true);      // seed: ยืนยันแล้วว่าเซิร์ฟเวอร์ว่างจริง จึงยกของในเครื่องขึ้นได้
-      sbApply(await sbPull(true));
-    } else {
-      sbApply(d);
-      sbReady = true;
-    }
-    sbCycleN = 1;
-    await sbFillIdPool(2);
-    sbErr = '';
+    sbApply(d);
+    sbReady = true;
+    // secure mode sends only after a successful authenticated baseline pull
+    if(sbCanEdit && await sbPush()) sbApply(await sbPull(false));
   }catch(err){
-    sbErr = String(err && err.message || err);
+    sbErr = safeError(err);
     console.warn('[sync] เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ใช้ข้อมูลในเครื่องต่อไป:', sbErr);
+  }finally{
+    authChecking = false;
+    sbChip();
+    renderUserUI();
+  }
+  if(authSession && !sbPollingStarted){
+    sbPollingStarted = true;
+    setInterval(()=>{ if(!document.hidden) sbCycle(); }, SB_POLL_MS);
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) sbCycle(); });
+  }
+  // เรียกหลัง membership พร้อมแล้วเท่านั้น · ก่อนหน้านี้ยังไม่รู้ว่าผู้ใช้เป็นใคร
+  // จึงยังตัดสินไม่ได้ว่าเขามีพื้นที่ทำงานส่วนตัวหรือไม่ · ล้มก็ไม่กระทบการซิงก์
+  if(authSession && authMembership){
+    try{ await mountPrivateWorkspace(); }
+    catch(err){ console.warn('[workspace]', safeError(err)); }
   }
   sbChip();
   // ดึงไม่สำเร็จ = ยังไม่มีฐานเทียบ ต้องให้รอบถัดไปดึงทั้งหมดใหม่ ห้ามปล่อยให้ไปดึงแบบ delta
