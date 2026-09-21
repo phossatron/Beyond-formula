@@ -752,7 +752,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-19.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-21.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -7570,6 +7570,8 @@ async function authFetchMembership(){
   return membership;
 }
 let sbReady = false;        // pull สำเร็จอย่างน้อย 1 ครั้งแล้ว
+let sbCanEdit = true;        // IAM อนุญาต FORMULA_EDIT ให้ผู้ใช้คนนี้หรือไม่
+let sbIamSeen = false;       // เคยได้คำตอบจากด่าน IAM จริง ๆ แล้วหรือยัง (ดีพลอยที่ไม่มีด่าน จะไม่มีวันเป็น true)
 let sbBusy = false;         // กำลังคุยกับเซิร์ฟเวอร์
 let sbApplying = false;     // กำลังเอาข้อมูลจากเซิร์ฟเวอร์ลงเครื่อง (ห้าม push กลับ)
 let sbErr = '';             // ข้อความ error ล่าสุด
@@ -7604,6 +7606,35 @@ let sbIdPool = [];          // เลขงานที่จองไว้ล�
 let sbPendMsg = [];         // ข้อความที่ยังหาห้องไม่เจอ รอลองใหม่รอบหน้า
 let sbPartial = false;      // รอบดึงข้อมูลล่าสุดได้มาไม่ครบหรือไม่ (ถ้าไม่ครบ ห้ามลบอะไรทั้งสิ้น)
 const SB_LAG_MS = 15000;    // ถอย watermark กลับไป 15 วิ กันข้อความที่บันทึกพร้อมกันหลุด
+// ถาม /sb/session ว่าผู้ใช้คนนี้มีสิทธิ์เขียนไหม
+// ด่านนี้เป็น "ชั้นที่สอง" ของดีพลอยที่มี IAM เท่านั้น — สิทธิ์จริงของแอปยังคุมด้วย can() / requirePerm() เหมือนเดิม
+// กติกา: ปิดประตูเฉพาะตอนที่ด่าน IAM ตอบมาจริง ๆ ว่า "ไม่ให้เขียน" เท่านั้น
+//   ไม่มีด่านในดีพลอยนี้ (404 / ไม่ใช่ JSON / ไม่มีฟิลด์ canEdit) = ไม่มีใครมาห้าม ให้ทำงานตามปกติ
+//   เรียกด่านไม่ได้ชั่วคราว = คงคำตอบครั้งล่าสุดไว้ ไม่ใช่แปลว่าถูกปฏิเสธ
+// เคยพังมาแล้ว: ดีพลอยจริงไม่มี /sb/session ทุกคนจึงกลายเป็นอ่านอย่างเดียวเงียบ ๆ
+// ไม่มีอะไรถูกบันทึกขึ้นเซิร์ฟเวอร์เลย และเลขงานก็ไม่ถูกจองจากเซิร์ฟเวอร์ (เสี่ยงรหัสงานซ้ำ)
+async function sbLoadWritePermission(){
+  const noGate = ()=>{ if(!sbIamSeen) sbCanEdit = true; };   // ไม่เคยเจอด่าน = ไม่มีด่าน
+  try{
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    // ด่านที่ค้างต้องไม่ถ่วงการเปิดแอป — sbBoot() รอฟังก์ชันนี้อยู่
+    const tm = setTimeout(()=>{ try{ ctl && ctl.abort(); }catch(e){} }, 3000);
+    let res;
+    try{
+      res = await fetch('/sb/session', {credentials:'same-origin', cache:'no-store', signal: ctl && ctl.signal});
+    } finally { clearTimeout(tm); }
+    if(res.status === 404 || res.status === 501){ noGate(); sbChip(); return; }   // ดีพลอยนี้ไม่มีด่าน IAM
+    const ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || '');
+    if(!res.ok || ct.indexOf('json') < 0){ noGate(); sbChip(); return; }
+    const data = await res.json().catch(()=>null);
+    if(!data || typeof data.canEdit === 'undefined'){ noGate(); sbChip(); return; }
+    sbIamSeen = true;                                        // ด่านนี้มีจริง ตั้งแต่นี้ไปเชื่อคำตอบของมัน
+    sbCanEdit = data.authenticated === true && data.canEdit === true;
+  }catch(e){
+    noGate();          // เรียกไม่ได้ ≠ ถูกปฏิเสธ · ถ้าเคยเจอด่านแล้ว ให้คงคำตอบเดิมไว้
+  }
+  sbChip();
+}
 function sbWMBack(iso){
   if(!iso) return '';
   const t = Date.parse(iso);
@@ -7774,20 +7805,20 @@ function sbChip(){
   let cls = 'sync-chip on', txt;
   if(sbErr){ cls += ' err'; txt = 'ซิงก์ไม่สำเร็จ — กดเพื่อลองใหม่'; }
   else if(sbBusy){ cls += ' busy'; txt = 'กำลังซิงก์…'; }
-  else if(sbReadOnlyNote){ cls += ' ok'; txt = 'ซิงก์แล้ว (ดูอย่างเดียว)'; }
+  else if(sbReadOnlyNote || (sbReady && !sbCanEdit)){ cls += ' ok'; txt = 'ซิงก์แล้ว (ดูอย่างเดียว)'; }
   else if(sbReady){ cls += ' ok'; txt = 'ซิงก์แล้ว' + (sbLastPush ? ' · ' + new Date(sbLastPush).toLocaleTimeString('th-TH') : ''); }
   else { txt = 'กำลังเชื่อมต่อ…'; }
   el.className = cls;
   el.textContent = txt;
   // บอกให้ชัดว่าทำไมงานในเครื่องถึงไม่ขึ้นเซิร์ฟเวอร์ แทนที่จะเงียบแล้วให้เดาเอง
   el.title = sbErr ? ('ข้อผิดพลาด: ' + sbErr + '\nกดเพื่อลองซิงก์ใหม่')
-    : (sbReadOnlyNote ? (sbReadOnlyNote + '\nกดเพื่อซิงก์ทันที')
+    : ((sbReadOnlyNote || (sbReady && !sbCanEdit)) ? ((sbReadOnlyNote || 'บัญชีนี้อ่านข้อมูล Formula ได้ แต่ยังไม่มีสิทธิ์แก้ไขแบบรายบุคคล') + '\nกดเพื่อซิงก์ทันที')
     : 'ข้อมูลซิงก์กับเซิร์ฟเวอร์กลาง — กดเพื่อซิงก์ทันที');
 }
 
 // ---------- เลขงานจากเซิร์ฟเวอร์ ----------
 async function sbFillIdPool(want){
-  if(!sbOn() || !sbCap.seq) return;
+  if(!sbOn() || !sbCanEdit || !sbCap.seq) return;
   const n = want || 2;
   while(sbIdPool.length < n){
     const r = await sbTry('seq', ()=>sbReq('rpc/fs_next_rec_seq', {method:'POST', body:{}}), null);
@@ -8305,7 +8336,8 @@ async function sbPush(){
 
 // เรียกจากทุกจุดที่แอปบันทึกข้อมูล — รวมการเปลี่ยนแปลงติดกันเป็นรอบเดียว
 function sbQueue(){
-  if(!sbOn() || !authSession || !sbReady || sbApplying) return;
+  if(!sbOn() || !authSession || !sbCanEdit || !sbReady || sbApplying) return;
+  sbTouchBusy();
   clearTimeout(sbPushTimer);
   sbPushTimer = setTimeout(()=>sbCycle(true), 400);
 }
@@ -8320,7 +8352,7 @@ async function sbCycle(urgent){
     // ยังไม่เคยดึงข้อมูลลงมาสำเร็จสักครั้ง (เช่น ตอนเปิดหน้าเว็บเน็ตหลุด) → ห้ามส่งขึ้นเด็ดขาด
     // ตอนนั้น sbSnap ยังว่าง ทุกงานจะดูเหมือน "ของใหม่" แล้วสำเนาเก่าใน localStorage
     // จะถูกดันขึ้นไปทับของจริงบนเซิร์ฟเวอร์ทั้งชุด — เคสจริงที่เคยเกิดมาแล้วสองครั้ง
-    const pushed = sbReady ? await sbPush() : false;
+    const pushed = sbReady && sbCanEdit ? await sbPush() : false;
     // เลือก "ใช้ของจากเซิร์ฟเวอร์" ต้องดึงทั้งหมด ไม่งั้นรอบ delta จะไม่มีอะไรกลับมาทับของในเครื่อง
     // และถ้ายังไม่เคยดึงสำเร็จ ต้องดึงทั้งหมดเสมอ เพื่อให้ได้ฐานเทียบครบก่อนส่งขึ้นรอบหน้า
     const full = !sbReady || sbGuardTake || (Date.now() - sbLastFull) >= SB_FULL_MS;
@@ -8594,11 +8626,12 @@ async function sbBoot(sessionAlreadyChecked){
       if(!session){ renderUserUI(); return; }
       await authFetchMembership();
     }
-    const d = await sbPull();
+    await sbLoadWritePermission();
+    const d = await sbPull(true);
     sbApply(d);
     sbReady = true;
-    // ส่งเฉพาะ local delta ที่เทียบกับ server snapshot แล้ว จากนั้นยืนยัน snapshot ใหม่
-    if(await sbPush()) sbApply(await sbPull());
+    // secure mode sends only after a successful authenticated baseline pull
+    if(sbCanEdit && await sbPush()) sbApply(await sbPull(false));
   }catch(err){
     sbErr = safeError(err);
     console.warn('[sync] เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ใช้ข้อมูลในเครื่องต่อไป:', sbErr);
