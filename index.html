@@ -742,7 +742,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-21.3</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-23.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -7360,8 +7360,16 @@ function sbChip(){
 }
 
 // ---------- เลขงานจากเซิร์ฟเวอร์ ----------
+// ประตูข้อมูลฝั่งเซิร์ฟเวอร์ยอมให้เขียน fs_meta และขอเลขงาน เฉพาะ Role ที่สร้างงานได้
+// (admin, sales, oversea, opc, mkt) — ตรงกับ can('createData') ของแอป
+// Role อื่นต้องไม่ยิงคำขอเลย ไม่ใช่ยิงแล้วโดน 403
+// เคสจริง 22 ก.ย. 2026: RD/RA/PD/Purchasing ยิง fs_meta โดนปฏิเสธ 851 ครั้งใน 2 ชั่วโมง
+// ทุก 9 วินาที ป้ายซิงก์ค้างแดงทั้งที่แชทกับอนุมัติใช้ได้ปกติ
+function sbCanWriteMeta(){
+  try{ return typeof can === 'function' ? !!can('createData') : true; }catch(e){ return false; }
+}
 async function sbFillIdPool(want){
-  if(!sbOn() || !sbCanEdit || !sbCap.seq) return;
+  if(!sbOn() || !sbCanEdit || !sbCap.seq || !sbCanWriteMeta()) return;
   const n = want || 2;
   while(sbIdPool.length < n){
     const r = await sbTry('seq', ()=>sbReq('rpc/fs_next_rec_seq', {method:'POST', body:{}}), null);
@@ -7765,8 +7773,9 @@ async function sbPush(seed){
   const recDel = sbPartial ? [] : Object.keys(sbSnap.records).filter(k=>!seenR[k]);
   const chtDel = sbPartial ? [] : Object.keys(sbSnap.chats).filter(k=>!seenC[k]);
   const usrDel = sbPartial ? [] : Object.keys(sbSnap.users).filter(k=>!seenU[k]);
-  const counterUp = !sbCap.seq && sbSnap.counter !== recCounter;
-  const tagsUp = sbSnap.tags !== stableStr(tagList);
+  const metaOk = sbCanWriteMeta();
+  const counterUp = metaOk && !sbCap.seq && sbSnap.counter !== recCounter;
+  const tagsUp = metaOk && sbSnap.tags !== stableStr(tagList);
 
   if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length && !msgUp.length
      && !apvUp.length && !apvDel.length && !recDel.length && !chtDel.length && !usrDel.length && !counterUp && !tagsUp) return false;
