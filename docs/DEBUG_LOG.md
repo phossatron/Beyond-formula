@@ -48,3 +48,24 @@ Focused browser tests failed before implementation **48 passed / 2 failed** (mis
 Rendered evidence uses sanitized actual Formula HTML, its real loader, the emitted private workspace bundle, synthetic responses, and the existing showcase's licensed embedded fonts. Noto Sans Thai 400/500/700 and Roboto 400/500 all loaded; computed inherited font stack matches Formula. Screenshots: `/tmp/science-formula-host-1440.png`, `-390.png`, `-360.png`; metrics `/tmp/science-formula-host-evidence.json`, reproduction `/tmp/science-formula-host.mjs`. No external requests or page errors. This is local visual verification, not UAT. The private repository has separate real-handler/application-role PostgreSQL integration evidence.
 
 No schema/storage/dependency or existing feature-flow changes. Rollback is a reviewed revert of this isolated change with origin disabled. Independent QA and CODEOWNER approval remain separate; no merge, release, production access or deployment. Same-origin bundle/CSP isolation remains an owner decision; transport fencing does not sandbox module code.
+
+## 2026-09-25 — ช่องค้นหารหัสงานหน้าแชท: พิมพ์อยู่แล้วข้อความหาย / รายการปิดเอง
+รายงานโดย: ผู้ใช้ (ทดลองใช้ build 2026-09-19.1 บน branch `feat/chat-job-search`)
+อาการ: พิมพ์คำค้นในช่องค้นหารหัสงาน แล้วข้อความหายหรือเด้งกลับเป็นชื่อห้องเดิม รายการผลค้นหาปิดเอง และช่องหลุด focus
+ทำให้เกิดซ้ำ: เปิดหน้า Chat → พิมพ์ในช่องค้นหา → เรียก `sbRerender()` (sync ทุก 5 วินาทีเรียกเมื่อมีข้อมูลใหม่จากเซิร์ฟเวอร์) → คำค้นหาย (เทสต์ใหม่พัง 60/2 ก่อนแก้)
+สาเหตุจริง (มี 2 ชั้น):
+1. `index.html` `sbRerender()` วาดหน้าแชทใหม่ด้วย `innerHTML` และเก็บค่าไว้เฉพาะ `#chatInput` ทำให้ `#chatPickInput` ถูกสร้างใหม่ด้วยค่าเริ่มต้น
+2. ช่องเดิมที่ถูกถอดออกยิง `blur` → `setTimeout(chatPickClose,150)` ซึ่งไปปิดรายการของช่องใหม่ (หา element จาก id) แม้ผู้ใช้ยัง focus อยู่
+แก้อย่างไร: `sbRerender()` เก็บและคืนค่า value/selection/focus ของ `#chatPickInput` (focus กลับจะเรียก `chatPickFilter()` เปิดรายการตามคำค้นเอง) และ onblur เรียก `chatPickBlur()` ที่ปิดรายการเฉพาะเมื่อช่องค้นหาไม่ได้ focus อยู่จริง · build stamp `2026-09-25.1`
+test ที่เพิ่ม: `sync ต้องไม่ล้างคำค้นในช่องค้นหารหัสงาน` ทั้งหน้ารายการแชทและในห้องแชท (รอเลย 150ms เพื่อจับชั้นที่ 2) · ก่อนแก้ 60 ผ่าน / 2 พัง → แก้ชั้น 1 แล้วยังพัง 2 (รายการปิดเอง) → หลังแก้ครบ `node harness.js` 62/62 ผ่าน, `./tests/run-sql-tests.sh` ผ่าน
+ผลกระทบอื่น: ไม่แตะโครงสร้างข้อมูลหรือ storage · `chatPickClose()` ที่ใช้กับ Escape/เลือกรายการยังปิดทันทีเหมือนเดิม · เรื่อง sync ข้ามแท็บที่ค้างไว้ ปิดแล้วในเคสถัดไป
+
+## 2026-09-25 — แท็บอื่นแก้แชทแล้วข้อความที่พิมพ์ค้างหาย + กันเกิดซ้ำทั้งตระกูล
+รายงานโดย: งานค้างจากเคสก่อนหน้า (พบระหว่างไล่ช่องค้นหารหัสงาน)
+อาการ: เปิดแอปหลายแท็บ เมื่อแท็บอื่นแก้ `fs_chats`/`fs_records` ข้อความที่พิมพ์ค้างในห้องแชทและคำค้นหายพร้อมหลุด focus
+ทำให้เกิดซ้ำ: พิมพ์ใน `#chatInput` → ยิง `StorageEvent('storage',{key:'fs_chats'})` → ช่องว่าง (เทสต์ใหม่พัง 63/1 กับโค้ดก่อนแก้)
+สาเหตุจริง: `index.html` ตัวฟัง `window 'storage'` เรียก `renderChat()` ตรง ๆ โดยไม่เก็บค่าใด ๆ · ต้นตอร่วมของทั้งสองเคสคือการเก็บค่าแบบลงชื่อ id ทีละช่องไว้ใน `sbRerender()` เท่านั้น ช่องใหม่หรือเส้นทางวาดใหม่อื่นจึงหลุดได้เสมอ
+แก้อย่างไร: เพิ่ม `preserveTypedFields(render)` เก็บทุก `input[id]`/`textarea[id]` ที่กำลังพิมพ์ (ค่า ≠ defaultValue) หรือถูก focus แล้วคืนค่า/เคอร์เซอร์/focus ให้ช่องที่ถูกสร้างใหม่ ข้าม checkbox/radio/file ฯลฯ และไม่แตะช่องที่ผู้ใช้ไม่ได้พิมพ์ (ค่าใหม่จากเซิร์ฟเวอร์ยังแสดงได้) · `sbRerender()` และตัวฟัง `storage` ใช้ helper ตัวเดียวกัน
+กติกาใหม่: ทุกจุดที่วาดหน้าใหม่เบื้องหลังโดยผู้ใช้ไม่ได้สั่ง ต้องห่อด้วย `preserveTypedFields()`
+test ที่เพิ่ม: `แท็บอื่นแก้แชท ต้องไม่ล้างข้อความที่พิมพ์ค้างในห้องแชท` และ `preserveTypedFields เก็บทุกช่องที่กำลังพิมพ์ แต่ไม่ยุ่งกับช่องที่ไม่ได้แตะ` · ก่อนแก้ 63/1 → หลังแก้ `node harness.js` 64/64 ผ่าน, `./tests/run-sql-tests.sh` ผ่าน, OPC adapter 3/3, headless Chrome โหลด `index.html` ไม่มี console error
+ผลกระทบอื่น: ไม่แตะโครงสร้างข้อมูล/storage/dependency · build stamp `2026-09-25.1` (ยังไม่ได้ปล่อย จึงไม่ขยับเลข)

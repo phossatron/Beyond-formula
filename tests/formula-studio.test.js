@@ -313,6 +313,106 @@
     equal(window.__fetchCalls.length, 0, 'local-only mode used the network');
   });
 
+  // sync ทุก 5 วินาทีเรียก sbRerender() ซึ่งวาดหน้าแชทใหม่ทั้งก้อน · เดิมช่องค้นหารหัสงาน
+  // ถูกสร้างใหม่ ข้อความที่พิมพ์ค้างหายและรายการผลค้นหาปิดเอง (build 2026-09-19.1)
+  async function chatSearchSurvivesSync(openId){
+    reset();
+    SB_URL = '';
+    SB_KEY = '';
+    userList = [{name:'แอดมิน', role:'admin', email:'', pass:null}];
+    currentUser = 'แอดมิน';
+    const savedRecords = records, savedChats = chats, savedOpen = chatOpenId;
+    const view = document.getElementById('chatView');
+    const wasOn = view.classList.contains('on');
+    const room = id=>({jobId:id, createdAt:'', createdBy:'แอดมิน', messages:[], parts:[], approvals:{pd:false, ra:false, rd:false}});
+    try{
+      records = [{id:'A00001', customer:'ลูกค้าหนึ่ง', createdBy:'แอดมิน'}, {id:'A00002', customer:'ลูกค้าสอง', createdBy:'แอดมิน'}];
+      chats = [room('A00001'), room('A00002')];
+      chatOpenId = openId;
+      view.classList.add('on');
+      renderChat();
+      const inp = document.getElementById('chatPickInput');
+      assert(inp, 'ไม่มีช่องค้นหารหัสงาน');
+      inp.focus();
+      inp.value = 'สอง';
+      chatPickFilter();
+
+      sbRerender();
+      await new Promise(done=>setTimeout(done, 250));   // เลยเวลา onblur → chatPickClose (150ms)
+
+      const after = document.getElementById('chatPickInput');
+      const list = document.getElementById('chatPickList');
+      equal(after.value, 'สอง', 'ข้อความที่พิมพ์ค้างหายหลัง sync');
+      assert(document.activeElement === after, 'ช่องค้นหาหลุด focus หลัง sync');
+      assert(list && !list.hidden, 'รายการผลค้นหาปิดเองหลัง sync');
+      const ids = [...list.querySelectorAll('.chat-pick-id')].map(el=>el.textContent);
+      equal(ids.join(','), 'A00002', 'ผลค้นหาหลัง sync ไม่ตรงกับคำค้น');
+    }finally{
+      records = savedRecords; chats = savedChats; chatOpenId = savedOpen;
+      if(!wasOn) view.classList.remove('on');
+      renderChat();
+    }
+  }
+  test('sync ต้องไม่ล้างคำค้นในช่องค้นหารหัสงาน (หน้ารายการแชท)', function(){ return chatSearchSurvivesSync(null); });
+  test('sync ต้องไม่ล้างคำค้นในช่องค้นหารหัสงาน (ในห้องแชท)', function(){ return chatSearchSurvivesSync('A00001'); });
+
+  // แท็บอื่นแก้ fs_chats → ตัวฟัง storage วาดหน้าแชทใหม่ · เดิมไม่เก็บค่าอะไรเลย
+  test('แท็บอื่นแก้แชท ต้องไม่ล้างข้อความที่พิมพ์ค้างในห้องแชท', async function(){
+    reset();
+    SB_URL = '';
+    SB_KEY = '';
+    userList = [{name:'แอดมิน', role:'admin', email:'', pass:null}];
+    currentUser = 'แอดมิน';
+    const savedRecords = records, savedChats = chats, savedOpen = chatOpenId;
+    const view = document.getElementById('chatView');
+    const wasOn = view.classList.contains('on');
+    try{
+      records = [{id:'A00001', customer:'ลูกค้าหนึ่ง', createdBy:'แอดมิน'}];
+      chats = [{jobId:'A00001', createdAt:'', createdBy:'แอดมิน', messages:[], parts:[], approvals:{pd:false, ra:false, rd:false}}];
+      localStorage.setItem('fs_chats', JSON.stringify(chats));
+      chatOpenId = 'A00001';
+      view.classList.add('on');
+      renderChat();
+      const ta = document.getElementById('chatInput');
+      assert(ta, 'ไม่มีช่องพิมพ์ข้อความในห้องแชท');
+      ta.focus();
+      ta.value = 'ร่างข้อความยาว ๆ';
+
+      window.dispatchEvent(new StorageEvent('storage', {key:'fs_chats'}));
+
+      const after = document.getElementById('chatInput');
+      assert(after !== ta, 'เทสต์ไม่ได้จำลองการวาดใหม่จริง');
+      equal(after.value, 'ร่างข้อความยาว ๆ', 'ข้อความที่พิมพ์ค้างหายเมื่อแท็บอื่นแก้แชท');
+      assert(document.activeElement === after, 'ช่องพิมพ์หลุด focus เมื่อแท็บอื่นแก้แชท');
+    }finally{
+      records = savedRecords; chats = savedChats; chatOpenId = savedOpen;
+      if(!wasOn) view.classList.remove('on');
+      renderChat();
+    }
+  });
+
+  // กันเกิดซ้ำ: ช่องที่เพิ่มในอนาคตต้องรอดการวาดใหม่เองโดยไม่ต้องลงชื่อ id ไว้ที่ไหน
+  test('preserveTypedFields เก็บทุกช่องที่กำลังพิมพ์ แต่ไม่ยุ่งกับช่องที่ไม่ได้แตะ', function(){
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const html = '<input id="kfA" value="ค่าเดิม"><input id="kfB" value="ค่าเดิม"><textarea id="kfC"></textarea><input id="kfD" type="checkbox">';
+    try{
+      host.innerHTML = html;
+      document.getElementById('kfA').value = 'พิมพ์ใหม่';
+      document.getElementById('kfC').value = 'ร่าง';
+      document.getElementById('kfC').focus();
+      document.getElementById('kfD').checked = true;
+      preserveTypedFields(()=>{ host.innerHTML = html.replace('id="kfB" value="ค่าเดิม"', 'id="kfB" value="ค่าใหม่จากเซิร์ฟเวอร์"'); });
+      equal(document.getElementById('kfA').value, 'พิมพ์ใหม่', 'ช่องที่พิมพ์ค้างไม่ได้ถูกเก็บ');
+      equal(document.getElementById('kfB').value, 'ค่าใหม่จากเซิร์ฟเวอร์', 'ช่องที่ผู้ใช้ไม่ได้แตะถูกทับด้วยค่าเก่า');
+      equal(document.getElementById('kfC').value, 'ร่าง', 'textarea ที่พิมพ์ค้างไม่ได้ถูกเก็บ');
+      assert(document.activeElement === document.getElementById('kfC'), 'focus ไม่กลับไปที่ช่องเดิม');
+      equal(document.getElementById('kfD').checked, false, 'checkbox ไม่ควรถูกแตะ');
+    }finally{
+      host.remove();
+    }
+  });
+
   // ---- Private workspace loader (ของเสริมล้วน ไม่แตะของเดิม) ----
   //
   // ข้อบังคับจากเจ้าของ: "ทำเสริมปุ่มหน้าใหม่ไม่แตะของเดิมนะ เข้าผ่าน user และ role
