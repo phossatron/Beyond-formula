@@ -12,7 +12,6 @@
 |---|---|
 | **`index.html`** | **ตัวแอปทั้งหมด** — HTML + CSS + JS วานิลลาในไฟล์เดียว ~7,800 บรรทัด ไม่มี build step |
 | `supabase/schema.sql` | สคีมาเซิร์ฟเวอร์กลาง — ตาราง, ดัชนี, ฟังก์ชันแจกเลขงาน, trigger `updated_at` |
-| `vercel.json` | ตั้ง `Cache-Control: max-age=0, must-revalidate` ให้ `index.html` เพื่อให้ hard refresh ได้เวอร์ชันใหม่จริง |
 | `README.md` | คู่มือฟีเจอร์สำหรับผู้ใช้และผู้ดูแล |
 | `CLAUDE.md` | กฎการแก้ไขโปรเจกต์ — **อ่านก่อนแตะโค้ดเสมอ** |
 | `formula_brief_template.xlsx` | เทมเพลต Excel สำหรับกรอกงานเดียว (ผู้ใช้ดาวน์โหลดจากหน้า Customer Data) |
@@ -221,7 +220,7 @@ node harness.js
 chrome --headless --dump-dom test.html      # ต้องผ่าน 100% และ console ไม่มี error
 ```
 
-**Deploy** — push ขึ้น GitHub แล้ว Vercel build ให้เอง (ไม่มี build step จริง แค่เสิร์ฟไฟล์)
+**Deploy** — ไม่มี build step · merge เข้า `main` แล้ว Runtime Operator ผนึก `index.html` เป็น release และสลับขึ้นแบบ blue-green บน runtime ของบริษัท (ไม่ใช้ Vercel แล้ว) · merge อย่างเดียวยังไม่ขึ้นเว็บจริง
 
 **ยืนยันว่าได้เวอร์ชันใหม่** — ดู build stamp บน header · **ต้องอัปเดตทุกครั้งที่แก้** (กฎ 9) · ผู้ใช้ต้อง hard refresh (`Cmd/Ctrl + Shift + R`)
 
