@@ -94,7 +94,11 @@ Role **Oversea** มีสิทธิ์เท่ากับ **Sales** ทุ�
 
 ## เว็บใช้งานจริง
 
-https://beyond-formula.vercel.app — deploy อัตโนมัติจาก branch `main` ทุกครั้งที่ push
+https://formula.beyond-workflow.com — เสิร์ฟจาก runtime ของบริษัท (อยู่หลัง Cloudflare Access)
+
+- merge เข้า `main` แล้ว **ยังไม่ขึ้นเว็บจริงทันที** — Runtime Operator ผนึก `index.html` จาก `main` เป็น release แล้วสลับขึ้นแบบ blue-green พร้อมทางถอย
+- ยืนยันว่าได้รุ่นใหม่จาก build stamp บน header หลัง hard refresh
+- ไม่ได้ใช้ Vercel แล้ว
 
 ## ข้อมูล
 
@@ -102,6 +106,8 @@ https://beyond-formula.vercel.app — deploy อัตโนมัติจา�
 **ก่อนแก้ไขโค้ด อ่าน [CLAUDE.md](CLAUDE.md) ก่อน — โดยเฉพาะกฎข้อ 1: ห้ามแก้ไขโครงสร้างข้อมูล**
 
 ## ตั้งค่าซิงก์ข้อมูลข้ามเครื่อง (Supabase)
+
+> **หมายเหตุ:** เว็บใช้งานจริงไม่ได้ใช้ Supabase แล้ว — ข้อมูลเก็บใน PostgreSQL ของบริษัทผ่านประตูข้อมูลของ runtime ซึ่งแทนค่า `SB_URL`/`SB_KEY` ตอนเสิร์ฟ ขั้นตอนด้านล่างใช้เฉพาะเมื่อรันแอปแยกเองกับ Supabase
 
 ถ้าไม่ตั้งค่า แอปยังใช้งานได้ปกติ แต่ข้อมูลจะอยู่แค่ในเครื่องที่กรอก ไม่มีใครเห็นด้วย
 
@@ -113,7 +119,7 @@ https://beyond-formula.vercel.app — deploy อัตโนมัติจา�
    let SB_URL = 'https://xxxxxxxx.supabase.co';
    let SB_KEY = 'eyJhbGciOi...';
    ```
-5. push ขึ้น GitHub → Vercel deploy เอง → เปิดเว็บ จะเห็นป้าย **ซิงก์แล้ว** สีเขียวมุมขวาบน
+5. เปิดเว็บ จะเห็นป้าย **ซิงก์แล้ว** สีเขียวมุมขวาบน
 
 ### การซิงก์ทำงานยังไง
 - **เขียน:** ส่งขึ้นเซิร์ฟเวอร์เฉพาะรายการที่เปลี่ยนจริง (รวบการบันทึกที่ติดกันภายใน 0.15 วินาทีเป็นครั้งเดียว)
