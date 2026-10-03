@@ -12,7 +12,6 @@
 |---|---|
 | **`index.html`** | **ตัวแอปทั้งหมด** — HTML + CSS + JS วานิลลาในไฟล์เดียว ~7,800 บรรทัด ไม่มี build step |
 | `supabase/schema.sql` | สคีมาเซิร์ฟเวอร์กลาง — ตาราง, ดัชนี, ฟังก์ชันแจกเลขงาน, trigger `updated_at` |
-| `vercel.json` | ตั้ง `Cache-Control: max-age=0, must-revalidate` ให้ `index.html` เพื่อให้ hard refresh ได้เวอร์ชันใหม่จริง |
 | `README.md` | คู่มือฟีเจอร์สำหรับผู้ใช้และผู้ดูแล |
 | `CLAUDE.md` | กฎการแก้ไขโปรเจกต์ — **อ่านก่อนแตะโค้ดเสมอ** |
 | `formula_brief_template.xlsx` | เทมเพลต Excel สำหรับกรอกงานเดียว (ผู้ใช้ดาวน์โหลดจากหน้า Customer Data) |
