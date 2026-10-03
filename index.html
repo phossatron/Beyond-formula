@@ -742,7 +742,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-23.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-10-03.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -4443,13 +4443,19 @@ function syncRecCounter(){
 }
 function nextRecordId(){
   // ปกติใช้เลขที่จองไว้จากเซิร์ฟเวอร์ (atomic) หลายคนสร้างพร้อมกันก็ไม่ได้เลขซ้ำ
-  if(typeof sbOn === "function" && sbOn() && sbCap.seq && sbIdPool.length){
+  // เลขที่จองไว้ต้องไม่ซ้ำงานที่มีในเครื่อง — งานที่สร้างตอนออฟไลน์ออกเลขเองและเซิร์ฟเวอร์ยังไม่รู้
+  // ถ้าใช้เลขซ้ำ สองงานจะรหัสเดียวกันแล้วงานหนึ่งหายตอนซิงก์ (formulatest 3 ต.ค. 2569)
+  const pooled = typeof sbOn === "function" && sbOn() && sbCap.seq;
+  while(pooled && sbIdPool.length){
     const seq = sbIdPool.shift();
     if(seq > recCounter) recCounter = seq;
+    const id = recIdFromSeq(seq);
+    if(records.some(r=>r.id===id)) continue;
     sbTopUpIdPool();
     saveRecordsStore();
-    return recIdFromSeq(seq);
+    return id;
   }
+  if(pooled) sbTopUpIdPool();
   // สำรอง: ออกเลขเองเมื่อยังต่อเซิร์ฟเวอร์ไม่ได้ (ทำงานแบบออฟไลน์)
   recCounter++;
   let id = recIdFromSeq(recCounter);
