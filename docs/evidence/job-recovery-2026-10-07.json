@@ -1,0 +1,85 @@
+{
+  "classification": "sanitized diagnostic metadata; no business contents or credentials",
+  "observedOnBangkok": "2026-10-07",
+  "browserSnapshotAtUTC": "2026-10-07T09:59:05.396Z",
+  "browserRole": "admin",
+  "deployedBuild": "2026-09-23.1",
+  "loadedRecords": 227,
+  "loadedRooms": 233,
+  "loadedOrphanRooms": 7,
+  "online": true,
+  "syncReady": true,
+  "syncErrorPresent": false,
+  "targets": [
+    {
+      "id": "A03132",
+      "recordInMemory": false,
+      "recordInLocalStorage": false,
+      "chatInMemory": true,
+      "chatInLocalStorage": true,
+      "roomVisible": false,
+      "chatMessageCount": 2,
+      "snapshotHasRecord": false,
+      "backupMemoryVersions": 0,
+      "backupStoredVersions": 0,
+      "observedJobCreationTimestamp": 1790922181604,
+      "observedChatCreationTimestamp": 1791280346285,
+      "observedJobDeletionTimestamps": []
+    },
+    {
+      "id": "A03430",
+      "recordInMemory": true,
+      "recordInLocalStorage": true,
+      "chatInMemory": true,
+      "chatInLocalStorage": true,
+      "roomVisible": true,
+      "recordCreatedAt": 1791344735902,
+      "formulaRowCount": 5,
+      "chatMessageCount": 19,
+      "snapshotHasRecord": true,
+      "dirtyAgainstSnapshot": false,
+      "backupMemoryVersions": 6,
+      "backupStoredVersions": 6,
+      "observedJobCreationTimestamp": 1791344735918,
+      "observedChatCreationTimestamp": 1791345915966,
+      "observedJobDeletionTimestamps": []
+    }
+  ],
+  "userClarifications": {
+    "A03430": "new job created to replace A03132, not automatic renumbering",
+    "originalSalesBrowser": "on another computer, not this connected iMac browser"
+  },
+  "sourceCorrelation": {
+    "candidateCommit": "196c15fc890a556391e381f31ffea4d104f5764d",
+    "historyCommitsChecked": 100,
+    "rawInlineApplicationSha256": "3f1050409657af61764251114a527e30e4b61d1d1c7eaa2bf136ad6b5f7aa148",
+    "configurationStatementsOmitted": 2,
+    "normalizedApplicationSha256": "ba6644959c62b54ef0989b9b1c5e2f6808d716b53ecb5d0c3d08e366a6ebf74e",
+    "normalizedApplicationMatchesCandidate": true,
+    "omissionScope": "SB_URL and SB_KEY declarations only; values were not returned",
+    "selectedFunctionHashesAlsoMatch": ["nextRecordId", "createChat", "visibleChats", "trackRecordVersions", "sbPush"],
+    "originMain": "d80041f",
+    "originMainBuild": "2026-10-03.1",
+    "originMainIsCurrentlyDeployed": false,
+    "ownerReleaseApprovalVerified": false
+  },
+  "syntheticCharacterization": {
+    "passed": 4,
+    "failed": 0,
+    "knownGapReproduced": [
+      "untouched cached record held, while Chat and activity upload",
+      "server-choice guard holds record, while Chat uploads"
+    ],
+    "positiveControls": [
+      "fresh touched record uploads before Chat",
+      "thrown record-write error stops this push before Chat"
+    ],
+    "receipt": "/tmp/formula-deployed-job-gate-repro-20261007.json"
+  },
+  "limits": [
+    "Loaded browser state and cached snapshots do not establish server completeness",
+    "No deletion event observed in retained browser activity does not prove no deletion occurred",
+    "Incident-specific A03132 record-write/read failure remains unverified",
+    "No original Sales-browser inspection, recovery, database mutation or deployment occurred"
+  ]
+}

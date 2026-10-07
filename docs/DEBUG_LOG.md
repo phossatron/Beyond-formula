@@ -69,3 +69,98 @@ test ที่เพิ่ม: `sync ต้องไม่ล้างคำค�
 กติกาใหม่: ทุกจุดที่วาดหน้าใหม่เบื้องหลังโดยผู้ใช้ไม่ได้สั่ง ต้องห่อด้วย `preserveTypedFields()`
 test ที่เพิ่ม: `แท็บอื่นแก้แชท ต้องไม่ล้างข้อความที่พิมพ์ค้างในห้องแชท` และ `preserveTypedFields เก็บทุกช่องที่กำลังพิมพ์ แต่ไม่ยุ่งกับช่องที่ไม่ได้แตะ` · ก่อนแก้ 63/1 → หลังแก้ `node harness.js` 64/64 ผ่าน, `./tests/run-sql-tests.sh` ผ่าน, OPC adapter 3/3, headless Chrome โหลด `index.html` ไม่มี console error
 ผลกระทบอื่น: ไม่แตะโครงสร้างข้อมูล/storage/dependency · build stamp `2026-09-25.1` (ยังไม่ได้ปล่อย จึงไม่ขยับเลข)
+
+## 2026-10-07 — ใบงาน A03132 ไม่ปรากฏแก่ Admin; Sales สร้าง A03430 แทน
+
+Scope: read-only diagnosis from user-supplied screenshots, the earlier sanitized audit and synthetic visibility checks. No production record/API query, Supabase Dashboard access, runtime patch, localStorage mutation or deployment. Task/Issue IDs were not supplied. Allowed change: this diagnostic history only; owner/reviewer: System Owner / `@phossatron`.
+
+### Evidence and clarification
+
+- All three supplied screenshots show deployed build `2026-09-23.1`. The local save gate and inactivity warning are in commit `0724d93`, build `2026-10-07.1`; they have not been deployed.
+- The user explicitly clarified that Sales created **a new A03430 to replace A03132**, rather than the system renumbering the same record.
+- The third screenshot shows Admin inside A03430's Chat with 7 participants, 3 messages and 1/4 approvals. This verifies that this new room was visible to Admin at capture time. It does not establish visibility on every account.
+- The first screenshot is filtered for A03358, the second for A03132. Those log rows are not proof of A03430's save history or a record-ID change. No customer/formula/message content is copied into this report.
+- Earlier sanitized evidence in `docs/AUDIT_2026-10-07.md` found an A03132 room but no associated record in the Admin-loaded record collection. That observation is historical, not a fresh server query.
+- A fresh unauthenticated GET of the public page for source comparison returned HTTP 403. No access-control bypass or credential use was attempted; the deployed source was not freshly recertified in this turn.
+
+### Reproduction and cause boundaries
+
+An isolated Node VM extracted `canSeeRecord` and `visibleChats` from commit `43b5cfb`, whose visibility rule matched the earlier deployed-source audit. Synthetic inputs: one room, initially no matching record, then a matching record, then creator and different Sales identities. **5 assertions passed**: orphan room hidden even for Admin; undefined record fails visibility; Admin sees a room once its record is loaded; creator sees it; other Sales does not. Receipt: `/tmp/formula-orphan-recheck-20261007.json`. No business data or network calls were used.
+
+The direct reason for an orphan room being hidden is the record prerequisite in `visibleChats`: a room is included only when its matching record passes `canSeeRecord`; a missing record returns false even for Admin. A Sales browser retaining a local record can consequently see a room that another browser cannot see when it lacks that record.
+
+The earlier deployed-source audit also identified a consistency gap: record upload can be held by `recTouched`/bulk guards while Chat and activity writes proceed independently. A creation log alone therefore does not demonstrate a successfully saved shared record. This is a supported possible mechanism, **not the proven cause of A03132's missing record**. The record might never have been uploaded, might have been deleted, or might be missing from that client's read/sync result; no incident-specific save response or deletion evidence resolves those alternatives.
+
+### Fix status and next evidence
+
+Creating A03430 is a workaround that establishes a different record/room. It neither restores A03132 nor transfers its history/approvals. The previously implemented save gate is prevention for future writes on the reviewed source; it does not reconstruct missing historical records, and it is not active on the build shown in the screenshots.
+
+No source fix was added in this turn because the first failing record-save/read operation for A03132 has not been reproduced. To prove that root cause, an authorized operator must provide sanitized evidence from the original Sales browser: whether record A03132 still exists locally, whether it is pending, the relevant record-write response/status and environment identity, plus any corresponding deletion event. Keep formulas, personal data and credentials out of the evidence. If an authoritative original record survives, prepare a reviewed recovery that preserves A03132; do not reconstruct it from log text or silently copy A03430 over it.
+
+Release of the local prevention change still requires an approved frontend/API base, independent Critical Change review and staging UAT. The starting branch had 22 earlier commits outside origin main, and the previously inspected deployed client used a different Chat transport. Runtime Operator deployment remains separate.
+
+```yaml
+status: PARTIAL_DIAGNOSIS_CONFIRMED_RECORD_LOSS_CAUSE_UNVERIFIED
+task_id: null
+issue_id: null
+files_changed: [docs/DEBUG_LOG.md]
+tests_run: [synthetic_visibility_recheck_5_assertions, git_diff_check]
+test_result: PASS_FOR_VISIBILITY_MECHANISM_ONLY; INCIDENT_SAVE_FAILURE_NOT_REPRODUCED
+security_impact: None; no credentials or production data queried
+database_impact: None
+permission_impact: None
+dependency_impact: None
+rollback: Revert this documentation addition; no runtime or data change
+open_risks:
+  - A03132 record-save/read/deletion cause requires sanitized incident evidence
+  - A03430 visibility is verified only in the supplied Admin screenshot
+  - Local prevention remains undeployed; release base and review pending
+pr_reference: null
+```
+
+### Follow-up — original-browser recovery preparation
+
+The user authorized the next step and confirmed that the original Sales browser is on another computer. The connected Chrome tab on this iMac is Admin. Read-only expressions returned only sanitized existence/count/timestamp metadata; they did not return customer names, formula rows, message contents, usernames, configuration values or credentials. No new Data API request, manual sync, page navigation, storage write or recovery was performed.
+
+At 2026-10-07 16:59:05 Asia/Bangkok, this Admin browser held 227 records and 233 rooms, including 7 rooms without a matching record. A03132 still had a room with 2 messages, but neither a memory record nor a `fs_records` entry or record snapshot. The local `fs_recbak` inspection found zero A03132 versions. A03430 had both record and room, was visible, matched its cached snapshot and had 6 local backup versions. These are client observations, not confirmation of server completeness. Empty observed deletion metadata is not proof that no deletion occurred.
+
+Source correlation is now materially stronger than the earlier build-label check. The runtime's main inline application hashes to `3f1050409657af61764251114a527e30e4b61d1d1c7eaa2bf136ad6b5f7aa148`. After omitting only the two `SB_URL`/`SB_KEY` configuration declarations, its SHA-256 is `ba6644959c62b54ef0989b9b1c5e2f6808d716b53ecb5d0c3d08e366a6ebf74e`, exactly matching commit `196c15fc890a556391e381f31ffea4d104f5764d`. Five selected function hashes also match. This identifies the application code candidate; it does not certify configuration, deployment approval, headers or database schema. `origin/main` is `d80041f`, build `2026-10-03.1`, with a different application, and is not the application currently loaded in the checked tab.
+
+The exact `sbPush` extracted from that matching commit was executed in an isolated VM against synthetic storage and mock writes. Four characterization scenarios passed: (1) an untouched cached record with no snapshot is held, yet its room and activity upload; (2) the server-choice guard holds even a touched record while Chat uploads; (3) a fresh touched job is uploaded before its Chat; (4) a thrown record-write error stops that push before Chat. Thus the prerequisite gap is reproduced in the deployed code lineage, but the original A03132 failure has not been proven. Receipt: `/tmp/formula-deployed-job-gate-repro-20261007.json`; durable sanitized observations: `docs/evidence/job-recovery-2026-10-07.json`.
+
+#### Operator action on the original Sales browser
+
+1. Use the original computer and Chrome profile/tab that created A03132. Preserve its current site data while inspecting; clearing site data would remove potential local recovery evidence.
+2. Open Chrome DevTools → Sources → Snippets, create a snippet, and use the contents of `scripts/inspect-job-recovery.js`. Run it with Cmd+Enter (macOS) or Ctrl+Enter. It accepts only the Formula hostname and reads only `fs_records`, `fs_chats`, `fs_recbak` plus already-loaded job/snapshot metadata. It does not save, sync, export business content, read credentials or make network requests.
+3. Return only the JSON report printed by the snippet. It describes A03132/A03430 availability, candidate backup counts and cached-snapshot comparison. A cached match explicitly is not treated as proof of successful server saving. Do not send raw localStorage, request headers, formulas or credentials.
+4. If A03132 exists in memory/storage or backup candidates, an authorized operator can preserve its original data in protected storage outside Git and the web document root. Prepare a reviewed recovery using the original ID, with validation and a fresh write acknowledgement. Preserve the existing room/history and obtain the business owner's decision on A03430; copying or merging approvals across different records is outside this read-only step.
+5. If no original candidate survives, stop reconstruction from log alone and inspect an authorized protected backup/audit source through sanitized evidence. No complete recovery payload exists in the currently connected Admin browser.
+
+The diagnostic snippet was tested with synthetic confidential sentinel values and protected stubs: **8/8 PASS** via `node --test tests/job-recovery-diagnostics.test.cjs`. Cases cover content redaction, no writes/network/credential reads, corrupt JSON, blocked storage access, canonical cached comparison, storage-only candidates, wrong-origin refusal and unrecognized role/action/error redaction. The blocked-storage case first failed because all read failures were labelled invalid JSON; it now returns a distinct fixed `UNAVAILABLE` status without error contents. No application source, schema, role permissions or runtime configuration was changed in this follow-up. Before release, port/review the preventive change against the approved legacy/main transport rather than deploying the unrelated Auth/event-RPC branch wholesale.
+
+```yaml
+status: DIAGNOSTICS_READY_AWAITING_ORIGINAL_SALES_BROWSER_EVIDENCE
+task_id: null
+issue_id: null
+files_changed:
+  - scripts/inspect-job-recovery.js
+  - tests/job-recovery-diagnostics.test.cjs
+  - docs/evidence/job-recovery-2026-10-07.json
+  - docs/DEBUG_LOG.md
+tests_run:
+  - node --test tests/job-recovery-diagnostics.test.cjs
+  - matching_deployed_sbPush_synthetic_characterization_4_scenarios
+  - normalized_runtime_source_hash_comparison
+  - git diff --check
+test_result: 8 privacy checks PASS; 4 characterization checks PASS; normalized application hash matches candidate commit
+security_impact: Read-only masked metadata; no credentials, business-content output or network calls from snippet
+database_impact: None; no database queries or mutations initiated
+permission_impact: None
+dependency_impact: None
+rollback: Revert diagnostic files and documentation addition; no business-data rollback needed
+open_risks:
+  - Original Sales computer is not connected; recovery candidate and incident-specific failure remain unknown
+  - Matching application source does not certify deployed configuration/schema/approval
+  - Preventive rules remain on a different undeployed branch and require transport-compatible review
+pr_reference: null
+```
