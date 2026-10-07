@@ -63,6 +63,7 @@ rejected      // {by, at, ts} — มีเมื่อถูก Reject เท�
 tags          // array ของ tag id (optional) — งานเก่าที่ไม่มีฟิลด์นี้ต้องทำงานได้ปกติ
 market        // '' | 'Domestic' | 'Oversea' (optional) — ตลาดปลายทาง
 country       // string (optional) — ประเทศปลายทาง เก็บเฉพาะเมื่อ market === 'Oversea'
+lastActivityAt // optional number: เวลาความเคลื่อนไหวจริงล่าสุด; เปิดอ่าน/ซิงก์ไม่เปลี่ยนค่า
 ```
 
 ### user (`fs_userlist[]`)
@@ -73,6 +74,7 @@ country       // string (optional) — ประเทศปลายทาง �
 ### chat (`fs_chats[]`)
 ```
 { jobId, createdAt, createdBy, messages[], parts[], approvals:{pd, ra, rd} }
+lastActivityAt // optional number: รวมการส่งข้อความ/อนุมัติ/ถอนอนุมัติ โดยไม่แก้ record ของ Role ที่อ่านใบงานได้อย่างเดียว
 messages[] = { type:'sys'|'msg', text, ts, ... }
 ```
 
