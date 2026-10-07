@@ -78,6 +78,7 @@ allBenefits allSP cons
 rows          // array ของสาร: {num, name, w, o, p, actual, note, hero, fda}
 modNote       // {text, savedBy, savedAt}
 closed        // {by, at, ts} — มีเมื่อปิดงานแล้วเท่านั้น
+lastActivityAt // optional number: เวลาความเคลื่อนไหวใบงาน/สูตร/สถานะล่าสุด; ห้ามเปลี่ยนเพียงเพราะเปิดอ่าน
 ```
 
 ### user (`fs_userlist[]`)

@@ -188,6 +188,14 @@ input.fi.rec-date{width:auto;min-width:150px;padding:0 12px;height:36px}
 .rec-tbl tbody tr.row-done{background:#E6F4EA}
 .rec-tbl tbody tr.row-done:hover{background:#CEEAD6}
 .rec-tbl tbody tr.row-done td{border-bottom-color:#CEEAD6}
+.rec-tbl tbody tr.job-stale,.chat-item.job-stale{background:#FFF1F0}
+.rec-tbl tbody tr.job-stale:hover,.chat-item.job-stale:hover{background:#FFE2DF}
+.job-alert{display:block;margin-top:5px;color:#A61B13;font-size:12px;font-weight:600;line-height:1.6;white-space:normal}
+.job-save{display:block;margin-top:5px;color:#695000;font-size:12px;line-height:1.6;white-space:normal}
+.job-save.saved{color:#176637}
+.job-lock{background:#FFF8E1;border:1px solid #CDBA72;border-radius:8px;padding:14px 16px;line-height:1.7;margin:12px 0}
+.job-lock .btn{min-height:44px}
+.side-link.chat-job.job-stale{color:#A61B13;background:#FFF1F0}
 .rec-tbl tr.sel{background:var(--tint)}
 .rec-tbl tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--or)}
 .rec-idlink{background:none;border:none;padding:0;font-family:'Roboto Mono',monospace;font-size:14px;font-weight:500;color:var(--or);cursor:pointer}
@@ -669,7 +677,7 @@ select.fi.role-select{width:auto;min-width:104px;height:36px;padding:0 8px;font-
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-09-25.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-10-07.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -2580,7 +2588,7 @@ function renderDashboard(d){
     uw ? `<span><b>น้ำหนัก/หน่วย:</b> ${esc(fmtUW(d))}</span>` : '',
     `<span><b>สร้างวันที่:</b> ${esc(d.metaDate)}</span>`,
     d.createdBy ? `<span><b>โดย:</b> ${esc(d.createdBy)}</span>` : '',
-  ].filter(Boolean).join('');
+  ].filter(Boolean).join('') + `<span id="dashboardJobStatus">${jobWarningHTML(d)}${jobSaveStatusHTML(d)}</span>`;
 
   document.getElementById('d_concept_main').textContent = conceptStr;
   document.getElementById('d_concept_desc').textContent = allConcepts.length>0
@@ -2861,6 +2869,11 @@ function logAct(cat, action, detail, jobId){
     via: impersonator || ''
   };
   actUid(e);
+  // Shared business movement; reading/printing/sync never advances this clock.
+  if(jobId && ['job','formula','close'].includes(cat)){
+    const r=records.find(x=>x.id===jobId);
+    if(r) r.lastActivityAt=e.ts;
+  }
   activities.unshift(e);
   if(activities.length > ACT_MAX) activities.length = ACT_MAX;
   saveActivities();
@@ -3624,7 +3637,7 @@ function buildModifyData(){
 function modifyListHTML(){
   const rows = visibleRecords().map(r=>`
     <tr>
-      <td><button class="rec-idlink" onclick="openModifyRecord('${r.id}')" title="เข้าไปแก้สูตร/หมายเหตุ">${r.id}</button></td>
+      <td><button class="rec-idlink" onclick="openModifyRecord('${r.id}')" title="เข้าไปแก้สูตร/หมายเหตุ">${r.id}</button>${jobWarningHTML(r)}${jobSaveStatusHTML(r)}</td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
       <td>${esc(r.form||'-')}</td>
@@ -3953,6 +3966,81 @@ function visibleRecords(){
 function canSeeRecord(r){
   return !!r && (!can('ownOnly') || r.createdBy===currentUser);
 }
+
+const JOB_IDLE_MS = 7*24*60*60*1000;
+function jobLastMovement(r){
+  if(!r) return 0;
+  const times=[r.createdAt,r.updatedAt,r.lastActivityAt,r.closed && r.closed.ts];
+  const c=getChat(r.id);
+  if(c){
+    times.push(c.createdAt);
+    (c.messages||[]).forEach(m=>times.push(m.ts));
+    Object.values(c.approvals||{}).forEach(a=>{ if(a) times.push(a.ts); });
+  }
+  return times.reduce((last,x)=>{ const t=Number(x); return Number.isFinite(t) && t>last?t:last; },0);
+}
+function jobIsStale(r, now){
+  const last=jobLastMovement(r), at=now===undefined?Date.now():now;
+  return !!(r && !r.closed && last && at-last>JOB_IDLE_MS);
+}
+function jobWarningHTML(r){
+  if(!canSeeRecord(r) || !jobIsStale(r)) return '';
+  const date=new Date(jobLastMovement(r)).toLocaleString('th-TH');
+  return `<span class="job-alert" role="status">⚠ ไม่มีความเคลื่อนไหวเกิน 7 วัน · ล่าสุด ${esc(date)}</span>`;
+}
+function jobValidationError(r){
+  if(!r || !/^[A-Z]+\d{5}$/.test(String(r.id||''))) return 'รหัสใบงานไม่ถูกต้อง';
+  if(!String(r.customer||'').trim() && !String(r.brand||'').trim()) return 'กรุณาระบุลูกค้าหรือแบรนด์';
+  if(!String(r.createdBy||'').trim()) return 'ใบงานไม่มีผู้สร้าง';
+  if(r.rows!==undefined && !Array.isArray(r.rows)) return 'ข้อมูลสูตรส่วนผสมไม่ถูกต้อง';
+  return '';
+}
+// JSONB may reorder object keys. Array order remains meaningful.
+function jobRecordFingerprint(r){
+  function sort(v){
+    if(Array.isArray(v)) return v.map(sort);
+    if(v && typeof v==='object') return Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])]));
+    return v;
+  }
+  return JSON.stringify(sort(r));
+}
+function jobConfirmationScope(){
+  return sbOn() && authSession && authMembership && authMembership.active && currentUser===authMembership.name
+    ? JSON.stringify([sbBase(),authSession.user && authSession.user.id,authMembership.name,authMembership.role]) : '';
+}
+function jobChatBlockReason(r){
+  if(!canSeeRecord(r)) return 'ไม่มีสิทธิ์เข้าถึงใบงานนี้';
+  const invalid=jobValidationError(r);
+  if(invalid) return invalid;
+  if(!sbOn()) return 'บันทึกไว้ในเครื่องแล้ว — ต้องเชื่อมเซิร์ฟเวอร์ก่อนใช้แชต';
+  const scope=jobConfirmationScope();
+  if(!scope) return 'กรุณาเข้าสู่ระบบเพื่อยืนยันการบันทึกใบงาน';
+  if(!navigator.onLine) return 'ออฟไลน์ — รอเชื่อมต่อและยืนยันการบันทึกใบงาน';
+  if(sbErr) return 'เชื่อมต่อหรือบันทึกไม่สำเร็จ — รอยืนยันใบงานก่อนใช้แชต';
+  if(sbConfirmedScope!==scope || sbConfirmedRecords[r.id]!==jobRecordFingerprint(r))
+    return 'รอยืนยันการบันทึกใบงานจากเซิร์ฟเวอร์ — ยังใช้แชตไม่ได้';
+  return '';
+}
+function requireJobChat(jobId){
+  if(!requirePerm('chat','บัญชีนี้ยังไม่มีสิทธิ์ใช้แชต')) return false;
+  const r=records.find(x=>x.id===jobId), why=jobChatBlockReason(r);
+  if(why){ alert(why + (sbErr?'\nซิงก์ไม่สำเร็จ: '+safeError(sbErr):'')); return false; }
+  return true;
+}
+function jobSaveStatusHTML(r){
+  if(!canSeeRecord(r)) return '';
+  const why=jobChatBlockReason(r);
+  return `<span class="job-save${why?'':' saved'}">${why?'🔒 '+esc(why):'✓ บันทึกสำเร็จ · ใช้แชตได้'}</span>`;
+}
+function jobLockedHTML(r){
+  const id=String(r && r.id || ''), linkable=/^[A-Z]+\d{5}$/.test(id);
+  return `<div class="job-lock" role="status"><b>แชตใบงาน ${esc(id)} ยังไม่พร้อมใช้งาน</b><br>${esc(jobChatBlockReason(r))}
+    ${sbErr?`<br>ซิงก์ไม่สำเร็จ: ${esc(safeError(sbErr))}`:''}
+    <br>ตรวจและบันทึกใบงานให้สำเร็จก่อน แล้วจึงเข้าแชตได้
+    <div style="margin-top:10px">${linkable?`<button class="btn btn-s btn-sm" onclick="openRecordPopup('${id}')">ตรวจใบงาน</button>`:''}
+    ${linkable && can('createData')?`<button class="btn btn-s btn-sm" onclick="editRecordInSales('${id}')">แก้ไขใบงาน</button>`:''}
+    <button class="btn btn-g btn-sm" onclick="backToChatList()">กลับรายการแชต</button></div></div>`;
+}
 // อนุมัติครบทุกฝ่ายแล้วหรือยัง (ใช้กับแถบสีเขียวในตาราง + การ์ดสรุป)
 function isFullyApproved(r){
   const c = getChat(r.id);
@@ -4001,8 +4089,8 @@ function renderRecordsList(){
   });
 
   const body = filtered.length ? filtered.map(r=>`
-    <tr class="${isFullyApproved(r) ? 'row-done' : ''}">
-      <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button></td>
+    <tr class="${isFullyApproved(r) ? 'row-done' : ''}${jobIsStale(r)?' job-stale':''}">
+      <td><button class="rec-idlink" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด">${r.id}</button>${jobWarningHTML(r)}${jobSaveStatusHTML(r)}</td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
       <td>${esc(r.form||'-')}</td>
@@ -4358,9 +4446,9 @@ function saveJobSection(jobId, key){
   });
   if(!changes.length){ closeGModal(); return; }
   if(key==='product' && !(PRODUCT_CATS[r.cat]||[]).includes(r.subcat)) r.subcat = '';
+  logAct('job','แก้ไขชุดข้อมูล ('+s.title+')', changes.join(' | '), r.id);
   const idx = records.findIndex(x=>x.id===r.id);
   if(idx>=0){ records[idx] = r; saveRecordsStore(); }
-  logAct('job','แก้ไขชุดข้อมูล ('+s.title+')', changes.join(' | '), r.id);
   const c = getChat(r.id);
   if(c){
     invalidateChatApprovals(c);
@@ -4516,6 +4604,7 @@ function openRecordPopup(id){
       <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
     </div>
     <div class="jd-grid" style="margin:14px 0 10px">${status}</div>
+    ${jobWarningHTML(r)}${jobSaveStatusHTML(r)}
     <div class="div"></div>
     ${jobDetailHTML(r)}
     <div class="modal-acts">
@@ -4630,10 +4719,11 @@ function renderChatMenu(){
     const un = chatUnread(c);
     const nm = r ? (r.brand || r.customer || '') : '';
     const owner = shortSalesName(r && r.salesOwner);
-    const tip = c.jobId + (nm?' — '+nm:'') + (owner?' · Sales '+owner:'') + ' · อนุมัติ ' + done + '/' + NPARTS + (un?' · มีอัพเดทใหม่':'');
-    return `<button class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip)}">
+    const blocked=jobChatBlockReason(r);
+    const tip = c.jobId + (nm?' — '+nm:'') + (owner?' · Sales '+owner:'') + ' · อนุมัติ ' + done + '/' + NPARTS + (un?' · มีอัพเดทใหม่':'') + (blocked?' · '+blocked:'');
+    return `<button class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}${jobIsStale(r)?' job-stale':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip+(jobIsStale(r)?' · ไม่มีความเคลื่อนไหวเกิน 7 วัน':''))}">
       <span class="side-bell${un?'':' off'}">🔔</span>
-      <span>${esc(c.jobId)}</span>
+      <span>${esc(c.jobId)}${jobIsStale(r)?' ⚠':''}${jobChatBlockReason(r)?' 🔒':''}</span>
       ${owner?`<span class="side-own">${esc(owner)}</span>`:''}
       <span class="side-ap${done===NPARTS?' full':''}">${done}/${NPARTS}</span>
     </button>`;
@@ -4691,6 +4781,7 @@ function pushSys(c, text, opt){
 
 // สร้างห้องแชทตามรหัสงาน
 function createChat(jobId){
+  if(!requireJobChat(jobId)) return null;
   const r = records.find(x=>x.id===jobId);
   if(!r){ alert('ไม่พบรหัสงาน '+jobId); return null; }
   let c = getChat(jobId);
@@ -4731,6 +4822,7 @@ function openChatRoom(jobId){
     alert('งานนี้สร้างโดยผู้ใช้อื่น — Role Sales เห็นเฉพาะงานของตนเอง');
     chatOpenId = null; renderChat(); return;
   }
+  if(!requireJobChat(jobId)){ chatOpenId=null; renderChat(); return; }
   const c = getChat(jobId) || createChat(jobId);
   if(!c) return;
   chatOpenId = jobId;
@@ -4747,10 +4839,10 @@ function renderChat(){
   const c = chatOpenId ? getChat(chatOpenId) : null;
   const r = c ? records.find(x=>x.id===c.jobId) : null;
   // เปิดห้องอยู่ = อ่านแล้ว (กระดิ่งของ User คนนี้หายไป)
-  if(c && r && canSeeRecord(r) && markChatSeen(c)) saveChats();
+  if(c && r && canSeeRecord(r) && !jobChatBlockReason(r) && markChatSeen(c)) saveChats();
   updateChatBadge();
   if(c && r && canSeeRecord(r)){
-    wrap.innerHTML = chatRoomHTML(c, r);
+    wrap.innerHTML = jobChatBlockReason(r) ? jobLockedHTML(r) : chatRoomHTML(c, r);
     const sc = document.getElementById('chatScroll');
     if(sc) sc.scrollTop = sc.scrollHeight;
   } else {
@@ -4835,7 +4927,7 @@ function chatListHTML(){
     const last = c.messages[c.messages.length-1];
     const done = CHAT_PARTS.filter(p=>c.approvals[p.key]).length;
     const preview = last ? (last.type==='sys' ? '· '+last.text : `${last.user||'-'}: ${last.text}`) : 'ยังไม่มีข้อความ';
-    return `<button class="chat-item" onclick="openChatRoom('${c.jobId}')">
+    return `<button class="chat-item${jobIsStale(r)?' job-stale':''}" onclick="openChatRoom('${c.jobId}')">
       <div class="chat-av"><svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/></svg></div>
       <div class="chat-it-main">
         <div class="chat-it-t"><span class="chat-it-code">${esc(c.jobId)}</span>
@@ -4844,6 +4936,7 @@ function chatListHTML(){
           ${done===NPARTS?'<span class="pass-dot">✓ อนุมัติครบทุกฝ่าย</span>':`<span class="chat-badge" style="margin-left:0">อนุมัติ ${done}/${NPARTS}</span>`}
         </div>
         <div class="chat-it-sub">${esc(preview)}</div>
+        ${jobWarningHTML(r)}${jobSaveStatusHTML(r)}
       </div>
       <div class="chat-it-meta">${last?esc(chatTime(last.ts)):''}<br>${c.parts.length} คน · ${c.messages.filter(m=>m.type!=='sys').length}</div>
       ${r?jobDelBtnHTML(r,'span'):''}
@@ -4958,7 +5051,7 @@ function openNewChatPicker(){
   const avail = visibleRecords().filter(r=>!getChat(r.id));
   const rows = avail.length ? avail.map(r=>`
     <tr>
-      <td><button class="rec-idlink" onclick="newChatFromRecord('${r.id}')">${r.id}</button></td>
+      <td><button class="rec-idlink" onclick="newChatFromRecord('${r.id}')">${r.id}</button>${jobWarningHTML(r)}${jobSaveStatusHTML(r)}</td>
       <td>${esc(r.brand||'-')}</td><td>${esc(r.customer||'-')}</td><td>${esc(r.form||'-')}</td>
       <td style="white-space:nowrap">${esc(r.date)}</td>
       <td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="newChatFromRecord('${r.id}')">New Chat</button>${jobDelBtnHTML(r)}</td>
@@ -5039,6 +5132,7 @@ function openJobEditLog(jobId){
 }
 
 function chatRoomHTML(c, r){
+  if(jobChatBlockReason(r)) return jobLockedHTML(r);
   const msgs = c.messages.length ? c.messages.map(m=>{
     if(m.type==='sys') return `<div class="chat-sys">${esc(m.text)} · ${esc(chatTime(m.ts))}</div>`;
     const me = m.user && m.user===currentUser;
@@ -5093,6 +5187,7 @@ function chatRoomHTML(c, r){
     <div class="db-hdr">
       <div class="db-title">${esc(c.jobId)} — ${esc(r.brand||r.customer||'Formula')}</div>
       <div class="db-sub">${esc(r.customer||'-')} · ${esc(r.conceptStr||'-')} · สร้างห้องแชทเมื่อ ${esc(chatTime(c.createdAt))}</div>
+      ${jobWarningHTML(r)}
       <div class="db-meta">
         <span><b>ผู้เข้าร่วม:</b> ${c.parts.length} คน</span>
         <span><b>ข้อความ:</b> ${c.messages.filter(m=>m.type!=='sys').length}</span>
@@ -5195,6 +5290,7 @@ function chatSaveFormula(r, logText){
 }
 
 function chatIngEdit(jobId, i, field, value){
+  if(!requireJobChat(jobId)) return;
   const r = records.find(x=>x.id===jobId);
   if(!r || !r.rows[i]) return;
   if(!requirePerm('editFormula','แก้สูตรได้เฉพาะ Role: Admin, PD')){ renderChat(); return; }
@@ -5212,6 +5308,7 @@ function chatIngEdit(jobId, i, field, value){
 }
 
 function chatIngAdd(jobId){
+  if(!requireJobChat(jobId)) return;
   const r = records.find(x=>x.id===jobId);
   if(!r) return;
   if(!requirePerm('editFormula','เพิ่มสารได้เฉพาะ Role: Admin, PD')) return;
@@ -5222,6 +5319,7 @@ function chatIngAdd(jobId){
 }
 
 function chatIngDel(jobId, i){
+  if(!requireJobChat(jobId)) return;
   const r = records.find(x=>x.id===jobId);
   if(!r || !r.rows[i]) return;
   if(!requirePerm('editFormula','ลบสารได้เฉพาะ Role: Admin, PD')) return;
@@ -5310,6 +5408,7 @@ function chatClamp(text, max){
 function sendChatMsg(){
   const c = getChat(chatOpenId);
   if(!c) return;
+  if(!requireJobChat(c.jobId)) return;
   if(!requirePerm('chat','บัญชีนี้ยังไม่มีสิทธิ์ส่งข้อความ')) return;
   const ta = document.getElementById('chatInput');
   const text = (ta.value||'').trim();
@@ -5331,6 +5430,7 @@ function sendChatMsg(){
 
 // PD / RA / RD Pass — กดเพื่ออนุมัติ (กดซ้ำเพื่อยกเลิก)
 function toggleChatApprove(jobId, key){
+  if(!requireJobChat(jobId)) return;
   const c = getChat(jobId);
   if(!c) return;
   if(!requireUser()) return;
@@ -5369,6 +5469,7 @@ const CHAT_ING_HEAD = ['#','ชื่อสาร','น้ำหนัก/หน
 const FDA_TEXT = {ok:'🟢 อนุมัติ', over:'🟡 เกินขีดจำกัด', not_approved:'🔴 ไม่อนุมัติ', unknown:'⚪ ไม่พบในฐานข้อมูล'};
 
 async function exportChatExcel(jobId){
+  if(!requireJobChat(jobId)) return;
   const c = getChat(jobId);
   const r = records.find(x=>x.id===jobId);
   if(!c || !r) return;
@@ -6188,6 +6289,7 @@ function authStoreSession(session){
   return normalized;
 }
 function authClearSession(){
+  sbConfirmedRecords = {}; sbConfirmedScope = '';
   clearTimeout(authRefreshTimer);
   authRefreshTimer = null;
   // ถอนพื้นที่ทำงานส่วนตัวก่อนล้าง session ไม่งั้นปุ่มกับ panel จะค้างอยู่บนหน้าจอ
@@ -6393,6 +6495,35 @@ function sbPersistSnapshot(){
   try{ localStorage.setItem('fs_sync_snapshot',JSON.stringify(sbSnap)); }catch(err){}
 }
 let sbSnap = sbLoadSnapshot();
+// Fresh server responses only; persisted snapshots are never proof of a save.
+let sbConfirmedRecords = {};
+let sbConfirmedScope = '';
+function sbConfirmRecords(list, replace){
+  const scope=jobConfirmationScope();
+  if(replace || scope!==sbConfirmedScope) sbConfirmedRecords={};
+  sbConfirmedScope=scope;
+  if(!scope) return;
+  (list||[]).forEach(r=>{
+    if(!jobValidationError(r)) sbConfirmedRecords[r.id]=jobRecordFingerprint(r);
+    else delete sbConfirmedRecords[r.id];
+  });
+}
+async function sbSaveRecords(rows){
+  if(!rows.length) return;
+  const scope=jobConfirmationScope();
+  const returned=await sbReq('fs_records?select=id,data',{
+    method:'POST',body:rows,headers:{Prefer:'resolution=merge-duplicates,return=representation'}
+  });
+  // A sign-out/user switch or an omitted/mismatched row cannot confirm a save.
+  if(scope!==jobConfirmationScope()) return;
+  (Array.isArray(returned)?returned:[]).forEach(row=>{
+    const sent=rows.find(x=>x.id===row.id);
+    if(!sent || !row.data || row.data.id!==row.id || jobRecordFingerprint(row.data)!==jobRecordFingerprint(sent.data)) return;
+    sbSnap.records[row.id]=JSON.stringify(sent.data);
+    sbConfirmRecords([row.data],false);
+  });
+  sbPersistSnapshot();
+}
 // ข้อความบอกผู้ใช้ว่าบัญชีนี้ดูได้อย่างเดียว (ตั้งตอน push แล้วโชว์ที่ chip)
 let sbReadOnlyNote = '';
 
@@ -6550,6 +6681,7 @@ function sbApply(d){
   const before = JSON.stringify([records, chats, userList, activities.length, recCounter]);
   const prior=sbSnap;
   const remoteSnapshot=sbRemoteSnapshot(d);
+  sbConfirmRecords(d.records,true);
   sbApplying = true;
   try{
     records = sbMergeObjects(records,d.records,'id',prior.records).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
@@ -6617,6 +6749,9 @@ function sbRerender(){
     renderUserUI();
     updateChatBadge();
     renderRecordsList();
+    const status=document.getElementById('dashboardJobStatus');
+    const r=records.find(x=>x.id===(window._currentRecordId || (window._lastDash && window._lastDash.id)));
+    if(status) status.innerHTML=r?jobWarningHTML(r)+jobSaveStatusHTML(r):'';
     if(document.getElementById('chatView') && document.getElementById('chatView').classList.contains('on')) renderChat();
     if(document.getElementById('actView') && document.getElementById('actView').classList.contains('on')) renderActivities();
   });
@@ -6625,7 +6760,8 @@ function sbRerender(){
 // ---------- จำสภาพปัจจุบันว่าตรงกับเซิร์ฟเวอร์แล้ว ----------
 function sbSnapshot(){
   const m = {records:{}, chats:{}, users:{}, acts:{}, counter:recCounter};
-  records.forEach(r=>{ m.records[r.id] = JSON.stringify(r); });
+  // Skipped/unacknowledged rows must remain pending, never become a fake baseline.
+  m.records=Object.assign({},sbSnap.records);
   chats.forEach(c=>{ m.chats[c.jobId] = JSON.stringify(c); });
   userList.forEach(u=>{ m.users[u.name] = JSON.stringify(u); });
   activities.forEach(e=>{ m.acts[actUid(e)] = 1; });
@@ -6649,6 +6785,8 @@ async function sbPushChatEvents(){
   if(!sbChatEventsOn() || !chatEventOutbox.length) return false;
   let changed = false;
   for(const item of chatEventOutbox.slice()){
+    const r=records.find(x=>x.id===item.jobId);
+    if(jobChatBlockReason(r)) continue;
     try{
       await sbReq('rpc/fs_append_chat_event', {
         method:'POST',
@@ -6675,6 +6813,7 @@ async function sbPushChatEvents(){
 async function sbPushChatReads(){
   if(!sbChatEventsOn() || !chatReadOutbox.length) return false;
   for(const item of chatReadOutbox.slice()){
+    if(jobChatBlockReason(records.find(x=>x.id===item.jobId))) continue;
     try{
       await sbReq('rpc/fs_mark_chat_seen', {
         method:'POST', body:{p_job_id:item.jobId,p_seen_ts:item.seenTs}
@@ -6714,11 +6853,9 @@ async function sbPush(){
   const recUp = [], chtUp = [], usrUp = [], actUp = [];
   const seenR = {}, seenC = {}, seenU = {};
   const secureChatEvents = sbChatEventsOn();
-  const chatEventsPushed = secureChatEvents ? await sbPushChatEvents() : false;
-  const chatReadsPushed = secureChatEvents ? await sbPushChatReads() : false;
-  const chatDeletesPushed = secureChatEvents ? await sbPushChatDeletes() : false;
+  let chatEventsPushed = false, chatReadsPushed = false, chatDeletesPushed = false;
   records.forEach(r=>{ const j = JSON.stringify(r); seenR[r.id]=1;
-    if(sbSnap.records[r.id] !== j) recUp.push({id:r.id, data:r}); });
+    if(sbSnap.records[r.id] !== j && !jobValidationError(r)) recUp.push({id:r.id, data:JSON.parse(j)}); });
   chats.forEach(c=>{ const j = JSON.stringify(c); seenC[c.jobId]=1;
     if(!secureChatEvents && sbSnap.chats[c.jobId] !== j) chtUp.push({job_id:c.jobId, data:c}); });
   // Secure-mode user lifecycle is Dashboard/membership-owned; browser is read-only.
@@ -6738,7 +6875,7 @@ async function sbPush(){
   const counterUp = sbCanWriteMeta() && localCounter > serverCounter;
   if(!recUp.length && !chtUp.length && !usrUp.length && !actUp.length
      && !recDel.length && !chtDel.length && !usrDel.length && !counterUp
-     && !chatEventsPushed && !chatReadsPushed && !chatDeletesPushed){ sbReadOnlyNote=''; return false; }
+     && !(secureChatEvents && (chatEventOutbox.length || chatReadOutbox.length || chatDeleteOutbox.length))){ sbReadOnlyNote=''; return false; }
 
   // แยก insert กับ update ออกจากกัน เพราะ policy คนละชุด: insert ให้
   // admin/sales/opc/mkt ส่วน update ให้ +pd · role ที่เขียนไม่ได้ (ra, rd,
@@ -6750,7 +6887,11 @@ async function sbPush(){
   const recSkipped = recUp.length - recSend.length;
   if(recSkipped>0) sbReadOnlyNote = 'บัญชีนี้ไม่มีสิทธิ์บันทึกขึ้นเซิร์ฟเวอร์ ' + recSkipped + ' รายการ (ดูได้อย่างเดียว)';
   else sbReadOnlyNote = '';
-  await sbUpsert('fs_records', recSend);
+  await sbSaveRecords(recSend);
+  // Commit/confirm the job before any event that refers to it is sent.
+  chatEventsPushed = secureChatEvents ? await sbPushChatEvents() : false;
+  chatReadsPushed = secureChatEvents ? await sbPushChatReads() : false;
+  chatDeletesPushed = secureChatEvents ? await sbPushChatDeletes() : false;
   if(!secureChatEvents) await sbUpsert('fs_chats', chtUp);
   await sbUpsert('fs_users', usrUp);
   if(actUp.length){
@@ -6760,6 +6901,7 @@ async function sbPush(){
     saveActPushed();
   }
   await sbDelete('fs_records', 'id', recDel);
+  recDel.forEach(id=>{ delete sbSnap.records[id]; delete sbConfirmedRecords[id]; });
   if(!secureChatEvents) await sbDelete('fs_chats', 'job_id', chtDel);
   await sbDelete('fs_users', 'name', usrDel);
   if(counterUp) await sbUpsert('fs_meta', [{key:'reccounter', value:Number(recCounter||0)}]);
@@ -6779,6 +6921,7 @@ function sbQueue(){
 let sbCycleRunning = false;
 async function sbCycle(){
   if(!sbOn() || !authSession || sbCycleRunning) return;
+  const beforeConfirmation=JSON.stringify([sbErr,sbConfirmedScope,sbConfirmedRecords]);
   sbCycleRunning = true; sbBusy = true; sbChip();
   try{
     await sbPush();
@@ -6796,6 +6939,7 @@ async function sbCycle(){
     console.warn('[sync]', sbErr);
   }finally{
     sbBusy = false; sbCycleRunning = false; sbChip();
+    if(beforeConfirmation!==JSON.stringify([sbErr,sbConfirmedScope,sbConfirmedRecords])) sbRerender();
     if(!authSession) renderUserUI();
   }
 }
@@ -7108,6 +7252,8 @@ renderRecordsList();
 
 // เชื่อมเซิร์ฟเวอร์กลาง (ถ้าตั้งค่า SB_URL/SB_KEY ไว้)
 sbBoot();
+// A quiet job must turn red even if no data changes arrive from the server.
+if(!window.__FS_TEST__) setInterval(()=>{ if(currentUser) sbRerender(); },60000);
 </script>
 </body>
 </html>

@@ -36,6 +36,38 @@ insert into public.fs_activities(uid,ts,data) values
 on conflict (uid) do nothing;
 commit;
 
+-- Chat must wait for an existing, valid, visible job, including for Admin.
+do $$
+declare blocked boolean;
+begin
+  perform set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+  blocked:=false;
+  begin
+    perform public.fs_append_chat_event('orphan-denied','A00999','{"type":"message","text":"synthetic orphan"}'::jsonb);
+  exception when insufficient_privilege then blocked:=true;
+  end;
+  if not blocked then raise exception 'unsaved job allowed Chat event'; end if;
+  blocked:=false;
+  begin perform public.fs_mark_chat_seen('A00999',10);
+  exception when insufficient_privilege then blocked:=true;
+  end;
+  if not blocked then raise exception 'unsaved job allowed Chat read'; end if;
+  insert into public.fs_records(id,data) values ('A00998','{"id":"A00998","createdBy":"Admin Owner","customer":" "}');
+  blocked:=false;
+  begin perform public.fs_append_chat_event('invalid-job-denied','A00998','{"type":"message","text":"invalid"}'::jsonb);
+  exception when insufficient_privilege then blocked:=true;
+  end;
+  if not blocked then raise exception 'invalid job allowed Chat event'; end if;
+  perform set_config('request.jwt.claim.sub','33333333-3333-3333-3333-333333333333',true);
+  blocked:=false;
+  begin perform public.fs_append_chat_event('wrong-owner-denied','A00001','{"type":"message","text":"other owner"}'::jsonb);
+  exception when insufficient_privilege then blocked:=true;
+  end;
+  if not blocked then raise exception 'another Sales owner allowed Chat event'; end if;
+  perform set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',true);
+  delete from public.fs_records where id='A00998';
+end $$;
+
 -- Utility: an expected authorization failure must set psql's ERROR flag.
 \set ON_ERROR_STOP off
 begin; set local role anon; select * from public.fs_records;
@@ -109,7 +141,7 @@ begin; set local role authenticated; select set_config('request.jwt.claim.sub','
 update public.fs_records set data = data
   || jsonb_build_object('color','ใส','scent','ไม่มีกลิ่น','packType','ขวดปั๊ม','widthCm','4','lengthCm','12')
   || jsonb_build_object('finalTarget','ผู้หญิง 25-35','gender','หญิง','price','390','priority','สูง','fdaType','เครื่องสำอาง')
-  || jsonb_build_object('allBenefits','["ลดเลือนริ้วรอย"]'::jsonb,'benefits','["ลดเลือนริ้วรอย"]'::jsonb,'cons','["แพ้ง่ายควรทดสอบ"]'::jsonb,'notes','ทดสอบ')
+  || jsonb_build_object('allBenefits','["ลดเลือนริ้วรอย"]'::jsonb,'benefits','["ลดเลือนริ้วรอย"]'::jsonb,'cons','["แพ้ง่ายควรทดสอบ"]'::jsonb,'notes','ทดสอบ','lastActivityAt',1000)
   where id='A00001';
 \if :ERROR
   \echo 'FAIL PD could not edit spec/target/benefit sections'

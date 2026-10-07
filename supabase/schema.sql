@@ -181,7 +181,7 @@ declare
   -- field-level guard ให้ตามหลังฟีเจอร์แก้ Job Data ที่เพิ่มเข้ามาทีหลัง
   -- ไม่ใช่การเปิดสิทธิ์ระดับตารางใหม่
   pd_keys text[] := array[
-    'rows','rdUpdated','modNote',
+    'rows','rdUpdated','modNote','lastActivityAt',
     -- product
     'conceptStr','form','size','sizeUnit','uw','uwUnit','cat','subcat',
     -- spec
@@ -378,6 +378,32 @@ drop policy if exists chat_reads_self_select on public.fs_chat_reads;
 create policy chat_reads_self_select on public.fs_chat_reads for select to authenticated
 using (private.fs_is_active_member() and user_id=auth.uid());
 
+-- Existing private API guard, not a new public capability. Lock the job while
+-- validating/mutating Chat so deletion cannot race a newly created room.
+create or replace function private.fs_require_chat_job(p_job_id text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare job_data jsonb; actor_role text := private.fs_current_role();
+begin
+  if actor_role is null then
+    raise exception 'active membership required' using errcode='42501';
+  end if;
+  select r.data into job_data from public.fs_records r where r.id=p_job_id for share;
+  if not found or job_data->>'id' is distinct from p_job_id
+     or (btrim(coalesce(job_data->>'customer',''))='' and btrim(coalesce(job_data->>'brand',''))='')
+     or btrim(coalesce(job_data->>'createdBy',''))=''
+     or (job_data ? 'rows' and jsonb_typeof(job_data->'rows') is distinct from 'array') then
+    raise exception 'a valid saved job is required before using Chat' using errcode='42501';
+  end if;
+  if actor_role='sales' and job_data->>'createdBy' is distinct from private.fs_current_name() then
+    raise exception 'Sales can use Chat only for owned jobs' using errcode='42501';
+  end if;
+end $$;
+revoke all on function private.fs_require_chat_job(text) from public,anon,authenticated;
+
 create or replace function public.fs_append_chat_event(
   p_event_id text,
   p_job_id text,
@@ -415,6 +441,7 @@ begin
   if p_payload is null or jsonb_typeof(p_payload) <> 'object' then
     raise exception 'chat event payload must be an object' using errcode='42501';
   end if;
+  perform private.fs_require_chat_job(p_job_id);
 
   select e.job_id,e.data into existing_job_id,existing_data
   from public.fs_chat_events e where e.event_id=p_event_id;
@@ -547,6 +574,7 @@ begin
   if p_job_id is null or p_job_id !~ '^[A-Z]+[0-9]{5}$' then
     raise exception 'invalid chat job id' using errcode='42501';
   end if;
+  perform private.fs_require_chat_job(p_job_id);
   insert into public.fs_chat_reads(user_id,job_id,seen_ts)
   values (auth.uid(),p_job_id,greatest(coalesce(p_seen_ts,0),0))
   on conflict (user_id,job_id) do update

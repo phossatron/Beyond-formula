@@ -29,7 +29,160 @@
     if(typeof chatDeleteOutbox !== 'undefined') chatDeleteOutbox = [];
     sbReady = false;
     sbErr = '';
+    if(typeof sbConfirmedRecords !== 'undefined') sbConfirmedRecords = {};
+    if(typeof sbConfirmedScope !== 'undefined') sbConfirmedScope = '';
   }
+
+  function savedJobFixture(){
+    return {id:'A00091',customer:'Synthetic job',createdBy:'Admin Owner',createdAt:1000,rows:[]};
+  }
+  function jobSession(r){
+    reset();
+    authSession = {access_token:'synthetic-member-token',user:{id:'synthetic-user'}};
+    authMembership = {name:'Admin Owner',role:'admin',active:true};
+    currentUser = 'Admin Owner';
+    userList = [{name:'Admin Owner',role:'admin',pass:null}];
+    records=[r]; chats=[]; activities=[]; recCounter=91; chatOpenId=null;
+    sbSnap={records:{},chats:{},users:{},acts:{},counter:91};
+  }
+  function pullJob(r){
+    sbApply({records:[JSON.parse(JSON.stringify(r))],chats:[],users:[],acts:[],counter:91});
+  }
+
+  test('unsaved jobs cannot create a room, including Admin', function(){
+    const r=savedJobFixture(); jobSession(r);
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ equal(createChat(r.id),null,'an unconfirmed job created a room'); equal(chats.length,0); }
+    finally{ window.alert=oldAlert; }
+  });
+  test('server-confirmed jobs open one room; a later edit locks it again', function(){
+    const r=savedJobFixture(); jobSession(r); pullJob(r);
+    const c=createChat(r.id); assert(c,'confirmed job did not create a room');
+    equal(createChat(r.id),c,'duplicate room created');
+    records[0].customer='Changed locally';
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ openChatRoom(r.id); equal(chatOpenId,null,'dirty job entered the room'); }
+    finally{ window.alert=oldAlert; }
+  });
+  test('offline local save cannot unlock chat', function(){
+    const r=savedJobFixture(); jobSession(r); SB_URL='';
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ equal(createChat(r.id),null,'local-only storage unlocked central Chat'); }
+    finally{ window.alert=oldAlert; }
+  });
+  test('a cached snapshot cannot substitute for a server acknowledgement', function(){
+    const r=savedJobFixture(); jobSession(r);
+    sbSnap.records[r.id]=JSON.stringify(r);
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ equal(createChat(r.id),null,'cached snapshot unlocked Chat'); }
+    finally{ window.alert=oldAlert; }
+  });
+  test('invalid confirmed data and another Sales owner remain blocked', function(){
+    const r=savedJobFixture(); r.customer=' '; jobSession(r); pullJob(r);
+    const oldAlert=window.alert; window.alert=function(){};
+    try{
+      equal(createChat(r.id),null,'invalid server data unlocked Chat');
+      r.customer='Valid'; pullJob(r);
+      authMembership={name:'Sales One',role:'sales',active:true}; currentUser='Sales One';
+      equal(createChat(r.id),null,'another owner created a room');
+    }finally{ window.alert=oldAlert; }
+  });
+  test('an already-open room cannot send or approve after the record becomes pending', function(){
+    const r=savedJobFixture(); jobSession(r); pullJob(r);
+    const c=createChat(r.id); chatOpenId=r.id;
+    records[0].customer='Pending edit';
+    const oldAlert=window.alert; window.alert=function(){};
+    try{
+      const before=c.messages.length, events=chatEventOutbox.length;
+      sendChatMsg(); toggleChatApprove(r.id,'pd');
+      equal(c.messages.length,before,'locked room added messages');
+      equal(chatEventOutbox.length,events,'locked room queued events');
+      equal(c.approvals.pd,null,'locked room approved');
+    }finally{ window.alert=oldAlert; }
+  });
+  test('only the returned record payload unlocks Chat; omitted rows stay pending', async function(){
+    const r=savedJobFixture(); jobSession(r);
+    window.__fetchQueue.push(window.__mockResponse(200,[]));
+    await sbPush();
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ equal(createChat(r.id),null,'an empty write response confirmed the record'); }
+    finally{ window.alert=oldAlert; }
+    window.__fetchQueue.push(window.__mockResponse(200,[{id:r.id,data:JSON.parse(JSON.stringify(r))}]));
+    await sbPush();
+    assert(createChat(r.id),'the returned saved payload did not unlock Chat');
+  });
+  test('an in-flight edit is not confirmed by the acknowledgement of the older payload', async function(){
+    const r=savedJobFixture(); jobSession(r);
+    window.__fetchQueue.push(function(){
+      const older=JSON.parse(JSON.stringify(r)); r.customer='Edited while saving';
+      return window.__mockResponse(200,[{id:r.id,data:older}]);
+    });
+    await sbPush();
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ equal(createChat(r.id),null,'older acknowledgement confirmed the newer edit'); }
+    finally{ window.alert=oldAlert; }
+  });
+  test('JSONB object-key ordering does not prevent a valid save acknowledgement', async function(){
+    const r=savedJobFixture(); jobSession(r);
+    const reordered={rows:[],createdAt:1000,createdBy:'Admin Owner',customer:'Synthetic job',id:'A00091'};
+    window.__fetchQueue.push(window.__mockResponse(200,[{id:r.id,data:reordered}]));
+    await sbPush();
+    assert(createChat(r.id),'JSONB key ordering kept a valid job locked');
+  });
+  test('pending Chat events are retained until their record is saved', async function(){
+    const r=savedJobFixture(); jobSession(r);
+    queueChatEvent(r.id,{type:'message',text:'waiting'},'pending-job-event');
+    await sbPushChatEvents();
+    equal(chatEventOutbox.length,1,'pending event was removed');
+    equal(window.__fetchCalls.length,0,'pending event reached the RPC');
+  });
+  test('a failed server refresh locks previously confirmed Chat until recovery', async function(){
+    const r=savedJobFixture(); jobSession(r); pullJob(r);
+    window.__fetchQueue.push(function(){ throw new Error('synthetic network unavailable'); });
+    await sbCycle();
+    const oldAlert=window.alert; window.alert=function(){};
+    try{ equal(createChat(r.id),null,'failed refresh left Chat unlocked'); }
+    finally{ window.alert=oldAlert; }
+    window.__fetchQueue.push(window.__mockResponse(200,[{id:r.id,data:JSON.parse(JSON.stringify(r))}]),
+      window.__mockResponse(200,[]),window.__mockResponse(200,[]),
+      window.__mockResponse(200,[{key:'reccounter',value:91}]),window.__mockResponse(200,[]));
+    await sbCycle();
+    assert(createChat(r.id),'successful recovery did not unlock Chat');
+  });
+  test('inactivity warns only after seven days and never for closed work', function(){
+    reset(); records=[]; chats=[]; activities=[];
+    const r=savedJobFixture(); r.createdAt=1000;
+    assert(typeof jobIsStale==='function','inactivity rule is missing');
+    equal(jobIsStale(r,604801000),false,'exactly seven days warned');
+    equal(jobIsStale(r,604801001),true,'more than seven days did not warn');
+    r.closed={ts:2000}; equal(jobIsStale(r,999999999),false,'closed work warned');
+  });
+  test('reading does not reset inactivity; edits, messages and approvals do', function(){
+    reset(); const r=savedJobFixture(); records=[r]; activities=[];
+    chats=[{jobId:r.id,createdAt:2000,messages:[],parts:[{lastAt:900000}],seen:{Reader:900000},approvals:{}}];
+    assert(typeof jobLastMovement==='function','movement calculation is missing');
+    equal(jobLastMovement(r),2000,'reading counted as movement');
+    chats[0].messages=[{type:'msg',ts:3000}]; equal(jobLastMovement(r),3000);
+    chats[0].approvals.pd={ts:4000}; equal(jobLastMovement(r),4000);
+    r.lastActivityAt=5000; equal(jobLastMovement(r),5000);
+    r.lastActivityAt='invalid'; equal(jobLastMovement(r),4000,'invalid timestamp masked known movement');
+  });
+  test('stale warnings are rendered only for visible jobs', function(){
+    const r=savedJobFixture(); jobSession(r);
+    authMembership={name:'Sales One',role:'sales',active:true}; currentUser='Sales One';
+    r.createdBy='Sales One'; records.push({...r,id:'A00092',createdBy:'Sales Two'});
+    recFromStr=''; recToStr=''; statFilter=''; renderRecordsList();
+    const panel=document.getElementById('recordsPanel');
+    assert(panel.querySelector('.job-stale'),'stale warning is missing');
+    assert(!panel.textContent.includes('A00092'),'hidden job leaked into warnings');
+  });
+  test('locked invalid identifiers cannot inject code through recovery buttons', function(){
+    const r=savedJobFixture(); r.id="A00091');window.__jobUnsafe=true;//"; jobSession(r);
+    const box=document.createElement('div'); box.innerHTML=jobLockedHTML(r);
+    box.querySelector('button').click();
+    assert(!window.__jobUnsafe,'invalid identifier executed through a recovery button');
+    delete window.__jobUnsafe;
+  });
 
   test('secure mode exposes the required Auth boundary', function(){
     ['authSignIn','authRestoreSession','authRefreshSession','authSignOut','authFetchMembership','authDataHeaders']
@@ -282,8 +435,9 @@
   test('chat event ที่ถูกปฏิเสธถาวร ต้องไม่ทำให้ทั้ง sbPush ค้าง', async function(){
     reset();
     activeSession('sales');
-    records = []; chats = []; activities = []; recCounter = 0;
+    records = [{id:'A00001',customer:'Synthetic',createdBy:currentUser}]; chats = []; activities = []; recCounter = 0;
     sbSnap = {records:{},chats:{},users:{},acts:{},counter:0};
+    sbConfirmRecords(records,true);
     chatEventOutbox = [{eventId:'ev-1', jobId:'A00001', payload:{type:'message', text:'ยาวเกิน'}}];
     // RPC ปฏิเสธถาวร แล้วตามด้วย 200 ของ upsert อื่น ๆ
     window.__fetchQueue.push(window.__mockResponse(400, {message:'chat message must be 1 to 10000 characters'}));
@@ -317,10 +471,10 @@
   // ถูกสร้างใหม่ ข้อความที่พิมพ์ค้างหายและรายการผลค้นหาปิดเอง (build 2026-09-19.1)
   async function chatSearchSurvivesSync(openId){
     reset();
-    SB_URL = '';
-    SB_KEY = '';
+    activeSession('admin');
     userList = [{name:'แอดมิน', role:'admin', email:'', pass:null}];
     currentUser = 'แอดมิน';
+    authMembership.name=currentUser;
     const savedRecords = records, savedChats = chats, savedOpen = chatOpenId;
     const view = document.getElementById('chatView');
     const wasOn = view.classList.contains('on');
@@ -328,6 +482,7 @@
     try{
       records = [{id:'A00001', customer:'ลูกค้าหนึ่ง', createdBy:'แอดมิน'}, {id:'A00002', customer:'ลูกค้าสอง', createdBy:'แอดมิน'}];
       chats = [room('A00001'), room('A00002')];
+      sbConfirmRecords(records,true);
       chatOpenId = openId;
       view.classList.add('on');
       renderChat();
@@ -359,15 +514,16 @@
   // แท็บอื่นแก้ fs_chats → ตัวฟัง storage วาดหน้าแชทใหม่ · เดิมไม่เก็บค่าอะไรเลย
   test('แท็บอื่นแก้แชท ต้องไม่ล้างข้อความที่พิมพ์ค้างในห้องแชท', async function(){
     reset();
-    SB_URL = '';
-    SB_KEY = '';
+    activeSession('admin');
     userList = [{name:'แอดมิน', role:'admin', email:'', pass:null}];
     currentUser = 'แอดมิน';
+    authMembership.name=currentUser;
     const savedRecords = records, savedChats = chats, savedOpen = chatOpenId;
     const view = document.getElementById('chatView');
     const wasOn = view.classList.contains('on');
     try{
       records = [{id:'A00001', customer:'ลูกค้าหนึ่ง', createdBy:'แอดมิน'}];
+      sbConfirmRecords(records,true);
       chats = [{jobId:'A00001', createdAt:'', createdBy:'แอดมิน', messages:[], parts:[], approvals:{pd:false, ra:false, rd:false}}];
       localStorage.setItem('fs_chats', JSON.stringify(chats));
       chatOpenId = 'A00001';
@@ -902,6 +1058,8 @@
     authSession = {access_token:'member-token'};
     authMembership = {name:'Sales One',role:'sales',active:true};
     currentUser = 'Sales One';
+    records=[{id:'A00001',customer:'Synthetic',createdBy:'Sales One'}];
+    sbConfirmRecords(records,true);
     window.__fetchQueue.push(window.__mockResponse(200, {
       version:1,type:'message',actor:'Sales One',ts:1,text:'hello',event_id:'evt-1'
     }));
