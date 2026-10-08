@@ -1,0 +1,39 @@
+{
+  "verified_at_utc": "2026-10-07T12:11:30.094987+00:00",
+  "status": "PASS_LOCAL_CHECKS",
+  "task_id": null,
+  "issue_id": null,
+  "base_commit": "d80041f185de63f69994341381f0fed4c404ee1f",
+  "tests": {
+    "command": "node --test tests/job-idle-alert.test.mjs",
+    "exit_code": 0,
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0
+  },
+  "diff_check_exit_code": 0,
+  "visual": {
+    "desktop": true,
+    "tablet": [
+      768,
+      1024
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "mobile_and_tablet_no_page_overflow": true,
+    "draft_and_focus_preserved": true,
+    "sending_message_clears_warning": true,
+    "captured_console_errors": 0,
+    "contrast_ratio": 6.85
+  },
+  "legacy_harness_available": false,
+  "production_data_accessed": false,
+  "production_changed": false,
+  "source_sha256": {
+    "index.html": "cf7ab7813cbe867d9d691f5f97aa2b60e8a9134aa4decc6d4c18575a2e118c64",
+    "tests/job-idle-alert.test.mjs": "80653375d6807e748bdf2a639e2df87bdcd43b2650ae00aebaa1fc9dc432df5b",
+    "CLAUDE.md": "3a2d6207a81a847305ec1eba2d3d0d2d3b5aedacbd944e2b3405cdbfb5b4387c"
+  }
+}

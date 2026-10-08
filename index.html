@@ -233,6 +233,11 @@ input.fi.rec-date{width:auto;min-width:150px;padding:0 12px;height:36px}
 .rec-tbl tbody tr.row-done{background:#E6F4EA}
 .rec-tbl tbody tr.row-done:hover{background:#CEEAD6}
 .rec-tbl tbody tr.row-done td{border-bottom-color:#CEEAD6}
+.rec-tbl tbody tr.job-stale,.chat-item.job-stale,.side-link.chat-job.job-stale{background:#FFF1F0}
+.rec-tbl tbody tr.job-stale:hover,.chat-item.job-stale:hover{background:#FFE2DF}
+.side-link.chat-job.job-stale{color:#A61B13}
+.side-link.chat-job.job-stale .job-id:after{content:' ⚠'}
+.job-alert{display:block;margin-top:5px;color:#A61B13;font-size:12px;font-weight:600;line-height:1.6;white-space:normal}
 .rec-tbl tr.sel{background:var(--tint)}
 .rec-tbl tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--or)}
 .rec-idlink{background:none;border:none;padding:0;font-family:'Roboto Mono',monospace;font-size:14px;font-weight:500;color:var(--or);cursor:pointer}
@@ -742,7 +747,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-10-03.1</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-10-07.2</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -2675,7 +2680,7 @@ function renderDashboard(d){
     uw ? `<span><b>น้ำหนัก/หน่วย:</b> ${fmtUW(d)}</span>` : '',
     `<span><b>สร้างวันที่:</b> ${d.metaDate}</span>`,
     d.createdBy ? `<span><b>โดย:</b> ${esc(d.createdBy)}</span>` : '',
-  ].filter(Boolean).join('');
+  ].filter(Boolean).join('') + jobWarningHTML(d);
 
   document.getElementById('d_concept_main').textContent = conceptStr;
   document.getElementById('d_concept_desc').textContent = allConcepts.length>0
@@ -2987,6 +2992,8 @@ function logAct(cat, action, detail, jobId){
   actUid(e);
   activities.unshift(e);
   if(activities.length > ACT_MAX) activities.length = ACT_MAX;
+  if(jobId && ['job','formula','close'].includes(cat)) noteJobMovement(jobId,e.ts);
+  if(jobId && ['chat','approve'].includes(cat)) noteChatMovement(jobId,e.ts);
   saveActivities();
   if(document.getElementById('actView') && document.getElementById('actView').classList.contains('on')) renderActivities();
 }
@@ -3982,7 +3989,7 @@ function buildModifyData(){
 function modifyListHTML(){
   const rows = visibleRecords().map(r=>`
     <tr>
-      <td><button class="rec-idlink${oseaCls(r)}" onclick="openModifyRecord('${r.id}')" title="เข้าไปแก้สูตร/หมายเหตุ">${r.id}</button></td>
+      <td><button class="rec-idlink${oseaCls(r)}" onclick="openModifyRecord('${r.id}')" title="เข้าไปแก้สูตร/หมายเหตุ">${r.id}</button>${jobWarningHTML(r)}</td>
       <td>${esc(r.brand||'-')}</td>
       <td>${esc(r.customer||'-')}</td>
       <td>${esc(r.form||'-')}</td>
@@ -4511,6 +4518,69 @@ function visibleRecords(){
 function canSeeRecord(r){
   return !!r && (!can('ownOnly') || r.createdBy===currentUser);
 }
+
+// Reading, printing, presence and sync do not restart the seven-day clock.
+const JOB_IDLE_MS = 7*24*60*60*1000;
+function jobLastMovement(r){
+  if(!r) return 0;
+  const times=[r.createdAt,r.updatedAt,r.lastActivityAt];
+  const c=getChat(r.id);
+  if(c){
+    times.push(c.createdAt,c.lastActivityAt);
+    (c.messages||[]).forEach(m=>times.push(m.ts));
+    Object.values(c.approvals||{}).forEach(a=>{ if(a) times.push(a.ts); });
+  }
+  // Legacy formula/status changes may only have a retained audit timestamp.
+  activities.forEach(e=>{
+    if(e.job===r.id && ['job','formula','close','chat','approve'].includes(e.cat)) times.push(e.ts);
+  });
+  return times.reduce((last,x)=>{ const t=Number(x); return Number.isFinite(t) && t>last?t:last; },0);
+}
+function jobIsStale(r, now){
+  const last=jobLastMovement(r), at=now===undefined?Date.now():now;
+  return !!(r && !r.closed && !r.rejected && last && at-last>JOB_IDLE_MS);
+}
+function jobWarningContentHTML(r){
+  if(!currentUser || !canSeeRecord(r) || !jobIsStale(r)) return '';
+  return `<span class="job-alert" role="status">⚠ ไม่มีความเคลื่อนไหวเกิน 7 วัน · ล่าสุด ${esc(new Date(jobLastMovement(r)).toLocaleString('th-TH'))}</span>`;
+}
+function jobWarningHTML(r){
+  if(!currentUser || !canSeeRecord(r)) return '';
+  return `<span data-job-alert="${esc(r.id)}">${jobWarningContentHTML(r)}</span>`;
+}
+function noteJobMovement(jobId, ts){
+  const r=records.find(x=>x.id===jobId);
+  if(!r || !Number.isFinite(ts) || ts<=0) return;
+  const copies=[r,modifyRec,window._lastDash].filter(x=>x && x.id===jobId);
+  const last=copies.reduce((n,x)=>{ const t=Number(x.lastActivityAt); return Number.isFinite(t)?Math.max(n,t):n; },ts);
+  let changed=false;
+  copies.forEach(x=>{ if(x.lastActivityAt!==last){ x.lastActivityAt=last; changed=true; } });
+  if(changed) saveRecordsStore();
+}
+function noteChatMovement(jobId, ts){
+  if(!Number.isFinite(ts) || ts<=0) return;
+  const c=getChat(jobId);
+  if(c){
+    const prior=Number(c.lastActivityAt);
+    if(!Number.isFinite(prior) || ts>prior){ c.lastActivityAt=ts; saveChats(); }
+  }else if(can('createData')){
+    // A deleted room has no timestamp left; its authorized deleter can record it.
+    noteJobMovement(jobId,ts);
+  }
+}
+function refreshJobWarnings(){
+  const byId=new Map(records.map(r=>[r.id,r]));
+  document.querySelectorAll('[data-job-alert]').forEach(el=>{
+    const content=jobWarningContentHTML(byId.get(el.dataset.jobAlert));
+    if(el.innerHTML!==content) el.innerHTML=content;
+  });
+  document.querySelectorAll('[data-idle-job]').forEach(el=>{
+    const r=byId.get(el.dataset.idleJob);
+    const stale=!!currentUser && canSeeRecord(r) && jobIsStale(r);
+    el.classList.toggle('job-stale',stale);
+    if(el.dataset.idleTitle!==undefined) el.title=el.dataset.idleTitle+(stale?' · ไม่มีความเคลื่อนไหวเกิน 7 วัน':'');
+  });
+}
 // เจ้าของงาน = คนที่กดสร้างงานนี้ หรือ Sales ที่ถูกระบุเป็นผู้รับผิดชอบงานนี้
 // (งานที่ Admin/OPC สร้างแทน จะระบุชื่อ Sales ไว้ในช่อง Sales ผู้รับผิดชอบ)
 function isJobOwner(r){
@@ -4611,10 +4681,10 @@ function renderRecordsList(){
   const nSel = selectedJobIds().length;
   const allOn = ckOn && _bulkIds.length>0 && _bulkIds.every(id=>recSel[id]);
   const body = filtered.length ? filtered.map(r=>`
-    <tr class="${r.rejected ? 'row-rej' : (isFullyApproved(r) ? 'row-done' : '')}">
+    <tr data-idle-job="${esc(r.id)}" class="${r.rejected ? 'row-rej' : (isFullyApproved(r) ? 'row-done' : '')}${jobIsStale(r)?' job-stale':''}">
       ${ckOn?`<td class="rec-ck-cell"><input type="checkbox" class="rec-ck" data-job="${r.id}"
         ${recSel[r.id]?'checked':''} onclick="toggleRecSel('${r.id}', this.checked)" title="เลือกงานนี้"></td>`:''}
-      <td><button class="rec-idlink${oseaCls(r)}" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด${isOversea(r)?' · Oversea '+esc(r.country||''):''}">${r.id}</button>
+      <td><button class="rec-idlink${oseaCls(r)}" onclick="openRecordPopup('${r.id}')" title="คลิกเพื่อดูรายละเอียด${isOversea(r)?' · Oversea '+esc(r.country||''):''}">${r.id}</button>${jobWarningHTML(r)}
         ${(recordTags(r).length || canManageTags()) ? `<div class="tg-row" style="margin-top:4px">
           ${recordTags(r).map(t=>tagChipHTML(t, '', r.id)).join('')}
           ${canManageTags()?`<button class="tg-add" title="เลือก Tag ของ ${esc(r.id)}" onclick="openJobTags('${r.id}')">+ Tag</button>`:''}
@@ -4739,8 +4809,8 @@ function bulkTag(tagId, add){
     if(!r) return;
     r.tags = r.tags || [];
     const i = r.tags.indexOf(tagId);
-    if(add && i<0){ r.tags.push(tagId); n++; }
-    else if(!add && i>=0){ r.tags.splice(i,1); n++; }
+    if(add && i<0){ r.tags.push(tagId); r.lastActivityAt=nowTs(); n++; }
+    else if(!add && i>=0){ r.tags.splice(i,1); r.lastActivityAt=nowTs(); n++; }
   });
   if(n){
     saveRecordsStore();
@@ -5273,6 +5343,7 @@ function openRecordPopup(id){
       <button class="modal-x" onclick="closeGModal()" title="ปิด">×</button>
     </div>
     <div class="jd-grid" style="margin:14px 0 10px">${status}</div>
+    ${jobWarningHTML(r)}
     <div class="div"></div>
     ${jobDetailHTML(r)}
     <div class="modal-acts">
@@ -5451,7 +5522,7 @@ function renderChatMenu(){
         ${tg.slice(0,3).map(t=>`<span class="side-tag" style="background:${esc(t.color)}"></span>`).join('')}
         ${tg.length>3?`<span class="side-tag-more">+${tg.length-3}</span>`:''}
       </span>` : '';
-    return `<button class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip)}">
+    return `<button data-idle-job="${esc(c.jobId)}" data-idle-title="${esc(tip)}" class="side-link chat-job${c.jobId===chatOpenId?' on':''}${un?' unread':''}${jobIsStale(r)?' job-stale':''}" onclick="openChatRoom('${c.jobId}')" title="${esc(tip+(jobIsStale(r)?' · ไม่มีความเคลื่อนไหวเกิน 7 วัน':''))}">
       <span class="side-bell${un?'':' off'}">🔔</span>
       <span class="job-id${mine?' job-mypass':''}${oseaCls(r)}">${esc(c.jobId)}</span>
       ${tagDots}
@@ -5695,7 +5766,7 @@ function chatListHTML(){
     const last = c.messages[c.messages.length-1];
     const done = CHAT_PARTS.filter(p=>c.approvals[p.key]).length;
     const preview = last ? (last.type==='sys' ? '· '+last.text : `${last.user||'-'}: ${last.text}`) : 'ยังไม่มีข้อความ';
-    return `<button class="chat-item" onclick="openChatRoom('${c.jobId}')">
+    return `<button data-idle-job="${esc(c.jobId)}" class="chat-item${jobIsStale(r)?' job-stale':''}" onclick="openChatRoom('${c.jobId}')">
       <div class="chat-av"><svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/></svg></div>
       <div class="chat-it-main">
         <div class="chat-it-t"><span class="chat-it-code">${esc(c.jobId)}</span>
@@ -5704,6 +5775,7 @@ function chatListHTML(){
           ${done===NPARTS?'<span class="pass-dot">✓ อนุมัติครบทุกฝ่าย</span>':`<span class="chat-badge" style="margin-left:0">อนุมัติ ${done}/${NPARTS}</span>`}
         </div>
         <div class="chat-it-sub">${esc(preview)}</div>
+        ${jobWarningHTML(r)}
       </div>
       <div class="chat-it-meta">${last?esc(chatTime(last.ts)):''}<br>${c.parts.length} คน · ${c.messages.filter(m=>m.type!=='sys').length}</div>
       ${r?jobDelBtnHTML(r,'span'):''}
@@ -5813,7 +5885,7 @@ function openNewChatPicker(){
   const avail = visibleRecords().filter(r=>!getChat(r.id));
   const rows = avail.length ? avail.map(r=>`
     <tr>
-      <td><button class="rec-idlink${oseaCls(r)}" onclick="newChatFromRecord('${r.id}')">${r.id}</button></td>
+      <td><button class="rec-idlink${oseaCls(r)}" onclick="newChatFromRecord('${r.id}')">${r.id}</button>${jobWarningHTML(r)}</td>
       <td>${esc(r.brand||'-')}</td><td>${esc(r.customer||'-')}</td><td>${esc(r.form||'-')}</td>
       <td style="white-space:nowrap">${esc(r.date)}</td>
       <td style="white-space:nowrap"><button class="btn btn-p btn-sm" onclick="newChatFromRecord('${r.id}')">New Chat</button>${jobDelBtnHTML(r)}</td>
@@ -5948,6 +6020,7 @@ function chatRoomHTML(c, r){
     <div class="db-hdr">
       <div class="db-title"><span class="job-id${oseaCls(r)}">${esc(c.jobId)}</span> — ${esc(r.brand||r.customer||'Formula')}</div>
       <div class="db-sub">${esc(r.customer||'-')} · ${esc(r.conceptStr||'-')} · สร้างห้องแชทเมื่อ ${esc(chatTime(c.createdAt))}</div>
+      ${jobWarningHTML(r)}
       <div class="db-meta">
         <span><b>ผู้เข้าร่วม:</b> ${c.parts.length} คน</span>
         <span><b>ข้อความ:</b> ${c.messages.filter(m=>m.type!=='sys').length}</span>
@@ -7672,6 +7745,7 @@ function sbRerender(){
   renderRecordsList();
   if(document.getElementById('chatView') && document.getElementById('chatView').classList.contains('on')) renderChat();
   if(document.getElementById('actView') && document.getElementById('actView').classList.contains('on')) renderActivities();
+  refreshJobWarnings();
   if(keep){
     const nta = document.getElementById('chatInput');
     if(nta){ nta.value = keep.v; if(keep.focus){ nta.focus(); try{ nta.setSelectionRange(keep.s, keep.e); }catch(e){} } }
@@ -7988,6 +8062,9 @@ renderRecordsList();
 
 // เชื่อมเซิร์ฟเวอร์กลาง (ถ้าตั้งค่า SB_URL/SB_KEY ไว้)
 sbBoot();
+// Refresh only warning nodes: never rebuild a form while someone is typing.
+setInterval(refreshJobWarnings,60000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshJobWarnings(); });
 </script>
 </body>
 </html>
