@@ -54,3 +54,35 @@ Proposed owner action, consistent with the repository's existing deployment deci
 Security/database/permission/dependency impact of this documentation change: none. Production runtime, IAM, secrets, branch protection and source behavior were unchanged.
 Rollback: revert this documentation commit; no business-data restore is required. Any hosting configuration change needs its own owner-approved rollback plan.
 Residual risk: Vercel check remains unresolved until owner configuration action and verification; no merge or production deployment was performed.
+
+### Bulk Excel import acknowledgement and per-row status — 2026-10-27
+
+**Incident:** A four-job workbook was reported as only partly visible. Read-only workbook inspection found four populated job rows with distinct source IDs and six ingredient rows per job. The reported production jobs have durable gateway receipts in `saved` state; a Chat open for one job was separately blocked because its room is missing. Record persistence and Chat readiness are distinct states.
+
+**Root cause confirmed:** bulk import displayed the number of local records created as complete success before the asynchronous server sync returned acknowledgements. Invalid rows were also skipped without appearing in the result. This made a partial or pending sync look complete. The exact transport reason for any individual missing workbook row remains unknown; no production write or re-import was attempted.
+
+**Fix prepared:** show a live per-row Dashboard status, map source JobID to generated record ID, report rejected rows, and show complete success only after every valid row has a fresh server acknowledgement. Pending records remain in the existing local sync path. Duplicate or missing source JobIDs are reported instead of being silently grouped.
+
+**Verification:** the new focused check first failed because the acknowledgement summary did not exist. On the current `main` base, `node --test tests/*.test.mjs` passed 24/24 and `git diff --check` passed. The documented `./tests/run-sql-tests.sh` is absent from this `main` tree; no database code changed. No production release or browser UAT was performed.
+
+```yaml
+status: LOCAL_FIX_PREPARED_REVIEW_REQUIRED
+task_id: null
+issue_id: null
+files_changed:
+  - index.html
+  - tests/bulk-import-confirmation.test.mjs
+  - docs/DEBUG_LOG.md
+tests_run:
+  - node --test tests/*.test.mjs
+test_result: 24/24 PASS; git diff --check PASS; SQL suite unavailable on this main tree
+security_impact: No authentication, authorization, CSP or secret handling changed
+database_impact: None; no schema or production data changes
+permission_impact: None
+dependency_impact: None
+rollback: Revert the single-file UI change and its focused regression test; no data migration is required
+open_risks:
+  - Original browser's row-level transport failure remains unproven
+  - Production UI remains unchanged until independent CODEOWNER review, UAT and approved release
+pr_reference: null
+```

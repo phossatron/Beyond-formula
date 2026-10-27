@@ -456,6 +456,9 @@ select.fi option{background:var(--card)}
 .alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
 .alert-i{background:var(--tint);border:1px solid #D2E3FC;color:var(--ontint)}
 .alert-s{background:#E6F4EA;border:1px solid #CEEAD6;color:#137333}
+.alert-bulk{display:block;white-space:pre-line;line-height:1.65}
+.alert-bulk.pending{background:#FEF7E0;border:1px solid #F9E2AF;color:#8A4B08}
+.alert-bulk.confirmed{background:#E6F4EA;border:1px solid #CEEAD6;color:#137333}
 /* ===== JOB DETAIL — แบ่งหมวดหัวข้อ ===== */
 .jd-secs{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;align-items:start}
 .jd-click{cursor:pointer;transition:box-shadow .15s,border-color .15s}
@@ -669,7 +672,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
 .sign-date{font-size:12px;color:var(--muted);text-align:center;border-top:1px solid var(--bd);padding-top:8px;margin-top:4px}
 /* PRINT */
 @media print{
-  .hdr,.sidebar,.pbar,.modal-ov,#recordsPanel,#dbStats,#inputView,#modifyView,#chatView,button{display:none!important}
+  .hdr,.sidebar,.pbar,.modal-ov,#bulkImportStatus,#recordsPanel,#dbStats,#inputView,#modifyView,#chatView,button{display:none!important}
   #dashView{display:block!important}
   body{background:#fff!important;color:#202124!important;font-size:10pt}
   /* Compact spacing to fit 2 pages */
@@ -747,7 +750,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
   <div class="logo"><svg viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-1.73-3L9 11.35V4H8a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2h-1v7.35L19.73 19A2 2 0 0 1 18 22H6Zm5-10.11L8.31 16.5h7.38L13 11.89V4h-2v7.89Z"/></svg></div>
   <div>
     <div class="hdr-title">Formula Studio</div>
-    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-10-07.2</div>
+    <div class="hdr-sub">Beyond Laboratory — R&D Briefing Tool · build 2026-10-27.1</div>
   </div>
   <div class="sync-chip" id="syncChip" onclick="sbManualSync()" title="สถานะการซิงก์ข้อมูลกับเซิร์ฟเวอร์กลาง"></div>
 </div>
@@ -1113,6 +1116,7 @@ tr.fx-row-dirty td{background:#FFF8E1}
 
 <!-- ======= DASHBOARD VIEW ======= -->
 <div id="dashView" class="view on">
+  <div id="bulkImportStatus" class="alert alert-bulk pending" role="status" aria-live="polite" style="display:none"></div>
   <div id="dbStats"></div>
   <div id="recordsPanel"></div>
   <div id="dashEmpty" class="empty">
@@ -6757,16 +6761,17 @@ async function handleFile(file) {
   }
   if(!(await ensureXLSX())) return;
   const reader = new FileReader();
-  reader.onload = function(e){
+  reader.onload = async function(e){
     try{
       const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
       if(wb.Sheets['งาน'] || wb.Sheets['Jobs']){
-        // โหมดหลาย job → สร้างหลาย record รวดเดียว
-        const n = bulkImportJobs(wb);
+        // โหมดหลาย job → สร้างในเครื่องก่อน แล้วแสดงผลยืนยันแยกรายใบงาน
+        const imported = bulkImportJobs(wb);
         showFileAlert();
         renderRecordsList();
         switchView('dash');
-        alert(`✅ นำเข้าหลายชุดข้อมูลสำเร็จ ${n} รายการ`);
+        sbQueue();
+        monitorBulkImportConfirmation(imported, 15000);
       } else {
         importWorkbook(wb);   // โหมด job เดียว → กรอกเข้าฟอร์ม
         showFileAlert();
@@ -6839,28 +6844,76 @@ function pick(obj, keys){
   for(const k of keys){ if(obj[k]!=null && String(obj[k]).trim()!=='') return String(obj[k]).trim(); }
   return '';
 }
+function bulkImportRecordConfirmed(item){
+  const record=item && item.record;
+  return !!(record && sbConfirmedRecords[record.id]===jobRecordFingerprint(record));
+}
+function bulkImportSummary(items, final){
+  const list=Array.isArray(items)?items:[];
+  const confirmed=list.filter(bulkImportRecordConfirmed).length;
+  const submitted=list.filter(item=>!!item.record).length;
+  const rejected=list.length-submitted;
+  const allConfirmed=list.length>0 && rejected===0 && confirmed===list.length;
+  const headline=allConfirmed
+    ? `✅ นำเข้าสำเร็จ ${list.length} รายการ — ระบบกลางยืนยันครบทุกงาน`
+    : !submitted
+      ? `⚠ ไม่มีรายการที่สร้างได้ (${rejected} แถวต้องแก้ข้อมูลก่อน)`
+    : final
+      ? `⚠ ระบบกลางยืนยัน ${confirmed}/${submitted} งาน — งานที่ยังค้างจะเก็บไว้ในเครื่องและซิงก์ต่อ${rejected?` · ${rejected} แถวไม่ได้สร้าง`:''}`
+      : `⏳ กำลังยืนยันกับระบบกลาง ${confirmed}/${submitted} งาน${rejected?` · ${rejected} แถวไม่ได้สร้าง`:''}`;
+  const details=list.map(item=>{
+    const label=item.sourceJobId ? `JobID ${item.sourceJobId}` : `แถว ${item.rowNumber}`;
+    const result=item.error ? `ไม่ได้สร้าง: ${item.error}` : bulkImportRecordConfirmed(item) ? 'บันทึกยืนยันแล้ว' : 'ยังค้าง';
+    return `${label} → ${item.record?item.record.id:'—'}: ${result}`;
+  });
+  return [headline].concat(details).join('\n');
+}
+function renderBulkImportStatus(items, final){
+  const status=document.getElementById('bulkImportStatus');
+  if(!status) return;
+  const allConfirmed=(items||[]).length>0 && (items||[]).every(item=>bulkImportRecordConfirmed(item));
+  status.className='alert alert-bulk '+(allConfirmed?'confirmed':'pending');
+  status.textContent=bulkImportSummary(items,final);
+  status.style.display='block';
+}
+async function monitorBulkImportConfirmation(items, timeoutMs){
+  const deadline=Date.now()+Math.max(0,Number(timeoutMs)||0);
+  renderBulkImportStatus(items,false);
+  while(Date.now()<deadline && (items||[]).some(item=>item.record && !bulkImportRecordConfirmed(item))){
+    if(!sbOn() || !authSession || !sbReady || !navigator.onLine) break;
+    await new Promise(resolve=>setTimeout(resolve,250));
+    renderBulkImportStatus(items,false);
+  }
+  renderBulkImportStatus(items,true);
+}
 function bulkImportJobs(wb){
   const jobSheet = wb.Sheets['งาน'] || wb.Sheets['Jobs'];
-  if(!jobSheet) return 0;
+  if(!jobSheet) return [];
   const jobs = XLSX.utils.sheet_to_json(jobSheet, {defval:''});
   const ingSheet = wb.Sheets['สารสกัด'];
   const ings = ingSheet ? XLSX.utils.sheet_to_json(ingSheet, {defval:''}) : [];
   // จัดกลุ่มสารสกัดตามรหัสงาน
-  const byJob = {};
+  const byJob = Object.create(null);
   ings.forEach(r=>{ const jid = pick(r, JOBID_KEYS); (byJob[jid] = byJob[jid] || []).push(r); });
-  let created = 0;
-  jobs.forEach(job=>{
+  const jobIdCounts=Object.create(null);
+  jobs.forEach(job=>{ const jid=pick(job,JOBID_KEYS); if(jid) jobIdCounts[jid]=(jobIdCounts[jid]||0)+1; });
+  const imported=[];
+  jobs.forEach((job,index)=>{
     const brand = pick(job, ['ชื่อแบรนด์']);
     const customer = pick(job, ['ชื่อลูกค้า']);
-    if(!brand && !customer) return;   // ข้ามแถวว่าง/ไม่ครบ
     const jid = pick(job, JOBID_KEYS);
+    const item={sourceJobId:jid,rowNumber:index+2,record:null,error:''};
+    imported.push(item);
+    if(!jid){ item.error='ไม่มีรหัสงาน (JobID)'; return; }
+    if(jobIdCounts[jid]>1){ item.error='รหัสงานซ้ำในไฟล์'; return; }
+    if(!brand && !customer){ item.error='ต้องระบุชื่อลูกค้าหรือชื่อแบรนด์'; return; }
     const d = buildRecordFromJob(job, byJob[jid] || []);
     saveRecord(d);
     renderDashboard(d);   // finalize derived fields (benefits/cons/totals/fda) ลง d
-    created++;
+    item.record=d;
   });
   saveRecordsStore();
-  return created;
+  return imported;
 }
 
 // สร้าง record 1 ชุดจากข้อมูล 1 job (ไม่ผ่านฟอร์ม)
