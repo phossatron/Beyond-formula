@@ -13,7 +13,7 @@ class WorkflowRulesTest {
         assertTrue(Role.PD.can(Cap.EDIT_FORMULA)); assertFalse(Role.RA.can(Cap.EDIT_FORMULA))
         assertTrue(Role.OPC.can(Cap.EXPORT)); assertFalse(Role.SALES.can(Cap.EXPORT))
         assertTrue(Role.MKT.can(Cap.CREATE_DATA)); assertTrue(Role.MKT.can(Cap.EDIT_FORMULA))
-        assertTrue(Role.MKT.canApprove("pd")); assertFalse(Role.MKT.canApprove("sales")); assertFalse(Role.MKT.canApprove("ra"))
+        assertTrue(Role.MKT.canApprove("pd")); assertTrue(Role.MKT.canApprove("sales")); assertFalse(Role.MKT.canApprove("ra")); assertFalse(Role.MKT.canApprove("rd"))
         assertTrue(Role.OVERSEA.canApprove("sales")); assertFalse(Role.OVERSEA.canApprove("pd"))
         assertTrue(Role.OVERSEA.ownOnly && Role.SALES.ownOnly); assertEquals(setOf(Role.SALES, Role.OVERSEA), Role.values().filter { it.ownOnly }.toSet())
         assertTrue(Role.OVERSEA.can(Cap.EXPORT) && Role.OVERSEA.can(Cap.CLOSE_JOB) && !Role.OVERSEA.can(Cap.EDIT_FORMULA))

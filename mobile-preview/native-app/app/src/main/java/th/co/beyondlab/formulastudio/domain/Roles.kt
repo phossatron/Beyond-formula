@@ -13,7 +13,7 @@ enum class Role(val label: String, val desc: String) {
     SALES("Sales", "สร้างงานใหม่ + แชต + อนุมัติ Sales · เห็นเฉพาะงานของตนเอง"),
     OVERSEA("Oversea", "สร้างงานใหม่ + แชต + อนุมัติ Sales + Export Excel + ปิดงาน · เห็นเฉพาะงานของตนเอง"),
     OPC("OPC", "สร้างงานใหม่ + แชต + Export Excel + ปิดงาน"),
-    MKT("MKT", "สร้างงานใหม่ + แก้สูตร + แชต + อนุมัติ PD + Export Excel + ปิดงาน (การตลาด)"),
+    MKT("MKT", "สร้างงานใหม่ + แก้สูตร + แชต + อนุมัติ PD และ Sales + Export Excel + ปิดงาน (การตลาด)"),
     PURCHASING("Purchasing", "ใช้งานกล่องข้อความในหน้า Chat Message");
 
     fun can(cap: Cap): Boolean = cap in CAPS.getValue(this)
@@ -47,7 +47,7 @@ enum class Role(val label: String, val desc: String) {
         )
         private val APPROVE: Map<Role, Set<String>> = mapOf(
             PD to setOf("pd"), RA to setOf("ra"), RD to setOf("rd"), SALES to setOf("sales"),
-            OVERSEA to setOf("sales"), MKT to setOf("pd"),
+            OVERSEA to setOf("sales"), MKT to setOf("pd", "sales"),
         )
     }
 }
