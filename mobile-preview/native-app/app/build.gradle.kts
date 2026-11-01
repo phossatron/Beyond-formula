@@ -31,6 +31,27 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
+
+    // Release signing material is NEVER in the repo: put it in the git-ignored keystore.properties
+    // (storeFile, storePassword, keyAlias, keyPassword). Without it the release APK is built unsigned.
+    val ksFile = rootProject.file("keystore.properties")
+    val ksProps = Properties().apply { if (ksFile.exists()) ksFile.inputStream().use { load(it) } }
+    if (ksProps.getProperty("storeFile") != null) {
+        signingConfigs.create("release") {
+            storeFile = rootProject.file(ksProps.getProperty("storeFile"))
+            storePassword = ksProps.getProperty("storePassword")
+            keyAlias = ksProps.getProperty("keyAlias")
+            keyPassword = ksProps.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
+    }
 }
 
 dependencies {
