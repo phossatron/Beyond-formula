@@ -147,7 +147,8 @@ fun LiveRoot() {
                 if (b.allSP.isNotEmpty()) { Text("จุดขาย", style = MaterialTheme.typography.titleSmall); b.allSP.forEach { Text("• $it") } }
                 if (b.cons.isNotEmpty()) Text("ข้อจำกัด: ${b.cons.joinToString(", ")}")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("sales", "pd", "ra", "rd").forEach { p -> AssistChip(onClick = {}, label = { Text("${p.uppercase()}: ${if (j.approvals[p] == true) "อนุมัติแล้ว" else "รอ"}") }) }
+                    if (client?.approvalsHidden == true) Text("ไม่มีสิทธิ์ดูสถานะอนุมัติ (บทบาทนี้)", style = MaterialTheme.typography.labelLarge)
+                    else listOf("sales", "pd", "ra", "rd").forEach { p -> AssistChip(onClick = {}, label = { Text("${p.uppercase()}: ${if (j.approvals[p] == true) "อนุมัติแล้ว" else "รอ"}") }) }
                 }
                 if (j.closed) Text("ปิดงานแล้ว", style = MaterialTheme.typography.titleSmall)
                 HorizontalDivider()

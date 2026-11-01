@@ -25,6 +25,8 @@ fun interface Transport { fun send(method: String, path: String, headers: Map<St
 class LiveClient(private val transport: Transport) {
     /** Records of the last [loadJobs] that could not be read (shown to the user, never hidden silently). */
     var skipped = 0; private set
+    /** True when the server refused this role the approvals table (403): approval state is unknown, not "pending". */
+    var approvalsHidden = false; private set
     private val jar = LinkedHashMap<String, String>()
 
     private fun call(method: String, path: String, headers: Map<String, String> = emptyMap(), body: String? = null): LiveResponse {
@@ -91,10 +93,16 @@ class LiveClient(private val transport: Transport) {
         val valid = (0 until minOf(recs.length(), limit)).map { recs.getJSONObject(it) }
             .filter { JOB_ID.matches(it.optString("id")) && it.optJSONObject("data") != null }
         val approvals = HashMap<String, MutableMap<String, Boolean>>()
-        valid.map { it.getString("id") }.chunked(50).forEach { ids ->
-            all("fs_approvals?select=job_id,part,data,updated_at&job_id=${inList(ids)}&order=job_id.asc,part.asc").forEach { a ->
-                if (a.optString("part") in PARTS && a.optJSONObject("data") != null) approvals.getOrPut(a.getString("job_id")) { HashMap() }[a.getString("part")] = true
+        approvalsHidden = false
+        try {
+            valid.map { it.getString("id") }.chunked(50).forEach { ids ->
+                all("fs_approvals?select=job_id,part,data,updated_at&job_id=${inList(ids)}&order=job_id.asc,part.asc").forEach { a ->
+                    if (a.optString("part") in PARTS && a.optJSONObject("data") != null) approvals.getOrPut(a.getString("job_id")) { HashMap() }[a.getString("part")] = true
+                }
             }
+        } catch (e: LiveError) {
+            if (e.status != 403) throw e      // 401/SSO still surface; only "role may not read approvals" is tolerated
+            approvalsHidden = true; approvals.clear()
         }
         skipped = 0
         return valid.mapNotNull { r -> runCatching { toJob(r, approvals[r.getString("id")].orEmpty()) }.getOrElse { skipped++; null } }

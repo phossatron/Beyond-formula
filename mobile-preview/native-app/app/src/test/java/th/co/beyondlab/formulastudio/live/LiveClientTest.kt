@@ -42,6 +42,19 @@ class LiveClientTest {
         c.logout(); assertEquals("DELETE /sb/session", calls.last())
     }
 
+    @Test fun forbiddenApprovalsKeepJobListWorking_andIsFlaggedNotShownAsPending() {
+        val base = fake()
+        val c = LiveClient(Transport { m, p, h, b -> if (p.startsWith("/sb/rest/v1/fs_approvals")) LiveResponse(403, "{}") else base.send(m, p, h, b) })
+        c.login("demo", "pw")
+        val jobs = c.loadJobs()
+        assertEquals(listOf("A00002", "A00001"), jobs.map { it.id }); assertTrue(c.approvalsHidden)
+        assertTrue(jobs.all { j -> j.approvals.values.none { it } })
+        val c401 = LiveClient(Transport { m, p, h, b -> if (p.startsWith("/sb/rest/v1/fs_approvals")) LiveResponse(401, "{}") else base.send(m, p, h, b) })
+        c401.login("demo", "pw")
+        assertEquals(401, assertThrows(LiveError::class.java) { c401.loadJobs() }.status)   // only 403 is tolerated
+        val ok = LiveClient(base); ok.login("demo", "pw"); ok.loadJobs(); assertFalse(ok.approvalsHidden)
+    }
+
     @Test fun allowListRefusesEveryWritePath() {
         for (p in listOf("/sb/rest/v1/rpc/fs_save_record", "/__formula/approval-change", "/sb/rest/v1/fs_messages?x=1", "/sb/rest/v1/fs_chats?x=1", "/sb/rest/v1/fs_records"))
             for (m in listOf("POST", "PUT", "PATCH", "DELETE")) assertFalse("$m $p", LiveClient.allowed(m, p))
