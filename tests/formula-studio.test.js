@@ -1664,6 +1664,186 @@
     }finally{ window.alert=oldAlert; pdDone(); }
   });
 
+  // ===== Chat formula edit uses the same save protections as PD Modify =====
+  function chatPdSession(r){
+    pdSession(r);
+    chats=[{jobId:r.id,createdAt:1,createdBy:'Sales One',messages:[],parts:[],approvals:{pd:null,ra:null,rd:null}}];
+    sbConfirmedScope=jobConfirmationScope(); sbConfirmedRecords={[r.id]:jobRecordFingerprint(sbPdComparable(r))};
+  }
+  test('Chat formula edit: edit after a background sync lands on the fresh copy (not a stale object)', function(){
+    const r=pdJob(); chatPdSession(r);
+    const oldConfirm=window.confirm;
+    try{
+      window.confirm=function(){            // sync replaces records[] while the confirm dialog is open
+        const remote=clone(r); remote.brand='Brand Changed By Sales'; remote.rows[1].name='Glycerin Remote';
+        sbApply({records:[remote],chats:[],users:[],acts:[],counter:91});
+        return true;
+      };
+      chatIngDel(r.id,0);
+      equal(records.length,1);
+      equal(records[0].brand,'Brand Changed By Sales','stale object clobbered the newer server field');
+      equal(records[0].rows.length,1,'row not removed');
+      equal(records[0].rows[0].name,'Glycerin Remote','stale object clobbered a server row');
+    }finally{ window.confirm=oldConfirm; pdDone(); }
+  });
+  test('Chat formula edit: PD payload is accepted by the guard mirror, derived fields are not written, queue goes to confirmed', async function(){
+    const r=pdJob(); chatPdSession(r); sbReady=true;
+    const server={[r.id]:clone(r)};
+    try{
+      queueRouter(null,server);
+      chatIngEdit(r.id,0,'w','20');
+      const it=saveQMine()[0];
+      assert(it,'edit was not tracked by the save queue');
+      equal(it.jobId,r.id); equal(it.state,'sending','state right after the local write'); equal(it.pct,50);
+      assert(panelText().includes('กำลังบันทึก'),'progress popup missing');
+      assert(chats[0].messages.some(m=>m.text&&m.text.includes('แก้สูตร')),'chat log message missing');
+      const oa=window.alert; let alerted=0; window.alert=function(){ alerted++; };
+      const navOk=saveQNavOK(); window.alert=oa;
+      equal(navOk,false,'navigation was not guarded while the save is pending'); equal(alerted,1);
+      await untilIdle();
+      equal(it.state,'confirmed',it.error); equal(it.pct,100);
+      equal(server[r.id].rows[0].w,20,'edit did not reach the server');
+      equal(server[r.id].totW,15,'derived field leaked to the server');
+      equal(records[0].totW,15,'derived field written into the record');
+    }finally{ pdDone(); }
+  });
+  test('Chat formula edit: add/delete are tracked; a hung request fails the item with retry and keeps the local copy', async function(){
+    const r=pdJob(); chatPdSession(r); sbReady=true;
+    const oldTimeout=sbReqTimeoutMs, oldConfirm=window.confirm; window.confirm=function(){ return true; };
+    const server={[r.id]:clone(r)};
+    try{
+      queueRouter(null,server);
+      chatIngAdd(r.id); await untilIdle();
+      equal(saveQMine()[0].state,'confirmed',saveQMine()[0].error);
+      equal(server[r.id].rows.length,3);
+      window.__fetchQueue.length=0; queueRouter(null,server);
+      chatIngDel(r.id,2); await untilIdle();
+      equal(saveQMine()[0].state,'confirmed',saveQMine()[0].error);
+      equal(server[r.id].rows.length,2);
+      window.__fetchQueue.length=0;
+      sbReqTimeoutMs=60;
+      for(let i=0;i<10;i++) window.__fetchQueue.push(function(){ return new Promise(function(){}); });
+      chatIngEdit(r.id,0,'name','Aqua Hung');
+      for(let i=0;i<100 && saveQMine()[0].state==='sending';i++) await sleep(20);
+      equal(saveQMine()[0].state,'failed','hung request left the chat save in sending');
+      assert(document.querySelector('#saveQPanel button[onclick^="saveQRetry"]'),'retry button missing');
+      equal(JSON.parse(localStorage.getItem('fs_records'))[0].rows[0].name,'Aqua Hung','local copy lost');
+    }finally{ sbReqTimeoutMs=oldTimeout; window.confirm=oldConfirm; pdDone(); }
+  });
+  test('Chat formula edit: still requires editFormula', function(){
+    const r=pdJob(); chatPdSession(r);
+    const oldAlert=window.alert; window.alert=function(){};
+    try{
+      authMembership={name:'PD One',role:'rd',active:true};
+      chatIngEdit(r.id,0,'name','Nope'); chatIngAdd(r.id);
+      equal(records[0].rows[0].name,'Aqua'); equal(records[0].rows.length,2); equal(saveQMine().length,0);
+    }finally{ window.alert=oldAlert; pdDone(); }
+  });
+
+  // ----- review follow-ups: row identity, derived fields by role, approvals, no-op, local-only -----
+  function mountChatEditor(r){
+    const host=document.createElement('div'); host.id='tmpChatEd'; host.innerHTML='<table>'+chatFormulaEditorHTML(r)+'</table>';
+    document.body.appendChild(host); return host;
+  }
+    test('Chat formula edit: rows shift between render and onchange -> nothing is edited and the user is told', function(){
+    const r=pdJob(); chatPdSession(r);
+    const oldAlert=window.alert; const msgs=[]; window.alert=function(m){ msgs.push(String(m)); };
+    const host=mountChatEditor(r);
+    try{
+      const remote=clone(r); remote.rows.reverse();                  // server now has Glycerin first
+      sbApply({records:[remote],chats:[],users:[],acts:[],counter:91});
+      const inp=host.querySelectorAll('tbody tr')[0].querySelectorAll('input')[0];   // rendered for "Aqua" row 1
+      // inline handlers are not compiled in the harness page, so call what the handler calls: identity captured at render
+      const rk=inp.closest('tr').dataset.rk;
+      chatIngEdit(r.id,0,'name','Aqua Renamed',rk);
+      equal(records[0].rows[0].name,'Glycerin','wrong row was edited');
+      equal(records[0].rows[1].name,'Aqua','row content changed');
+      equal(saveQMine().length,0,'a save was queued for an aborted edit');
+      assert(msgs.length>=1,'no visible notice');
+    }finally{ window.alert=oldAlert; host.remove(); pdDone(); }
+  });
+  test('Chat formula delete: rows shift while the confirm dialog is open -> the wrong row is not deleted', function(){
+    const r=pdJob(); chatPdSession(r);
+    const oldAlert=window.alert, oldConfirm=window.confirm; const msgs=[]; window.alert=function(m){ msgs.push(String(m)); };
+    try{
+      window.confirm=function(){ const remote=clone(r); remote.rows.reverse(); sbApply({records:[remote],chats:[],users:[],acts:[],counter:91}); return true; };
+      chatIngDel(r.id,0);                                             // user confirmed deleting "Aqua"
+      equal(records[0].rows.length,2,'a row was deleted although the confirmed row moved');
+      equal(records[0].rows[0].name,'Glycerin'); equal(saveQMine().length,0);
+      assert(msgs.length>=1,'no visible notice');
+    }finally{ window.alert=oldAlert; window.confirm=oldConfirm; pdDone(); }
+  });
+  test('Chat formula edit as Admin refreshes derived totals; as PD it keeps them', function(){
+    const r=pdJob(); chatPdSession(r);
+    try{
+      authMembership={name:'Admin One',role:'admin',active:true}; currentUser='Admin One'; userList=[{name:'Admin One',role:'admin',pass:null}];
+      sbConfirmedScope=jobConfirmationScope(); sbConfirmedRecords={[r.id]:jobRecordFingerprint(sbPdComparable(records[0]))};
+      chatIngEdit(r.id,0,'w','20');
+      equal(records[0].rows[0].w,20); equal(records[0].totW,25,'admin chat edit did not refresh totW');
+    }finally{ pdDone(); }
+  });
+  test('PD Modify edit as Admin refreshes derived totals', function(){
+    const r=pdJob(); pdSession(r);
+    try{
+      authMembership={name:'Admin One',role:'admin',active:true}; currentUser='Admin One'; userList=[{name:'Admin One',role:'admin',pass:null}];
+      openModifyRecord(r.id); editIng(0,'w','20.00');
+      equal(records[0].totW,25,'admin Modify edit did not refresh totW');
+    }finally{ pdDone(); }
+  });
+  test('Chat formula edit: a real edit clears approvals; without editFormula approvals and chat are untouched', function(){
+    const r=pdJob(); chatPdSession(r);
+    try{
+      chats[0].approvals={pd:{by:'x',at:1},ra:{by:'y',at:2},rd:null};
+      const oldAlert=window.alert; window.alert=function(){};
+      authMembership={name:'PD One',role:'rd',active:true};
+      chatIngEdit(r.id,0,'w','20');
+      equal(records[0].rows[0].w,10,'rd edited the formula');
+      assert(chats[0].approvals.pd && chats[0].approvals.ra,'approvals touched without permission');
+      equal(chats[0].messages.length,0,'chat message pushed without permission');
+      window.alert=oldAlert;
+      authMembership={name:'PD One',role:'pd',active:true};
+      chatIngEdit(r.id,0,'w','20');
+      equal(records[0].rows[0].w,20);
+      assert(!chats[0].approvals.pd && !chats[0].approvals.ra && !chats[0].approvals.rd,'approvals not cleared by a real edit');
+      equal(chats[0].messages.length,1);
+    }finally{ pdDone(); }
+  });
+  test('Chat formula edit: a no-op neither re-renders the chat nor creates rows', function(){
+    const r=pdJob(); chatPdSession(r);
+    const real=renderChat; let n=0; renderChat=function(){ n++; return real.apply(this,arguments); };
+    try{
+      chatIngEdit(r.id,0,'w','10');                                   // same value
+      equal(n,0,'no-op re-rendered the chat (drops an unsent draft)'); equal(saveQMine().length,0);
+      delete records[0].rows;
+      chatSaveFormula(r.id,function(){ return false; },'x');
+      equal(n,0); assert(records[0].rows===undefined,'rows were created by a no-op');
+    }finally{ renderChat=real; pdDone(); }
+  });
+  test('Chat formula edit in local-only mode: chat is gated, but chatSaveFormula itself confirms locally', async function(){
+    const r=pdJob(); chatPdSession(r); const oldUrl=SB_URL; SB_URL='';
+    const oldAlert=window.alert; window.alert=function(){};
+    try{
+      chatIngEdit(r.id,0,'w','20');
+      equal(records[0].rows[0].w,10,'chat edit went through without a server');
+      chatSaveFormula(r.id,function(x){ x.rows[0].w=20; return {log:'local edit'}; },'แก้สูตรในแชท');
+      await sleep(20);
+      equal(records[0].rows[0].w,20); equal(saveQMine()[0].state,'confirmed'); assert(saveQMine()[0].localOnly);
+    }finally{ SB_URL=oldUrl; window.alert=oldAlert; pdDone(); }
+  });
+
+  test('Locked chat view explains a pending or failed formula save', function(){
+    const r=pdJob(); chatPdSession(r);
+    saveQ.push({seq:901,jobId:r.id,user:currentUser,label:'<b>x</b>',state:'sending',pct:50});
+    let html=jobLockedHTML(r);
+    assert(html.includes('กำลังบันทึกสูตร') && html.includes('50%'),'pending note missing');
+    saveQ[saveQ.length-1].state='failed';
+    html=jobLockedHTML(r);
+    assert(html.includes('บันทึกสูตรไม่สำเร็จ') && html.includes('PD Modify'),'failed note missing');
+    saveQ.length=0;
+    assert(!jobLockedHTML(r).includes('job-lock-note'),'note shown with nothing pending');
+    pdDone();
+  });
+
   async function run(){
     const results = [];
     for(const item of tests){
